@@ -37,3 +37,27 @@ Add these in Render > Environment:
 - ANGEL_TOTP_SECRET
 - SCANNER_API_KEY
 - ALLOWED_ORIGIN
+
+
+## V11.1 Decision Engine
+
+New endpoint:
+
+`POST /api/market/decision`
+
+Test body:
+
+```json
+{
+  "ltp": 2455,
+  "open": 2430,
+  "high": 2462,
+  "low": 2422,
+  "close": 2428,
+  "avgPrice": 2440,
+  "volume": 1500000,
+  "marketTrend": "BULLISH"
+}
+```
+
+This returns BUY / SELL / WAIT, confidence, trade score, entry zone, stop loss, targets, risk and reasons.
