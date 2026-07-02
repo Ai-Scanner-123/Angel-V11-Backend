@@ -1,14 +1,19 @@
-function apiKeyAuth(req, res, next) {
-  const requiredKey = process.env.SCANNER_API_KEY;
+const jwt = require('jsonwebtoken');
 
-  if (!requiredKey) return next();
+function optionalAuth(req, res, next) {
+  const secret = process.env.JWT_SECRET;
+  const authHeader = req.headers.authorization;
 
-  const providedKey = req.headers['x-api-key'];
-  if (providedKey !== requiredKey) {
-    return res.status(401).json({ error: 'Unauthorized: invalid scanner API key' });
+  if (!authHeader || !secret) return next();
+
+  try {
+    const token = authHeader.replace('Bearer ', '');
+    req.user = jwt.verify(token, secret);
+  } catch (error) {
+    req.user = null;
   }
 
   next();
 }
 
-module.exports = { apiKeyAuth };
+module.exports = { optionalAuth };
