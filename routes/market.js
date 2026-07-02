@@ -1,53 +1,45 @@
 const express = require('express');
 const router = express.Router();
-const { apiKeyAuth } = require('../middleware/auth');
 const angelService = require('../services/angelService');
+const { makeDecision } = require('../services/decisionEngine');
 
-router.get('/status', apiKeyAuth, async (req, res) => {
+router.get('/status', (req, res) => {
+  res.json({
+    success: true,
+    status: 'ok',
+    service: 'AI NSE Scanner V11.1 Market API',
+    smartApiReady: Boolean(process.env.ANGEL_API_KEY && process.env.ANGEL_CLIENT_CODE),
+    decisionEngine: true
+  });
+});
+
+router.post('/login', async (req, res) => {
   try {
-    const session = await angelService.getSession();
-    res.json({
-      status: 'connected',
-      hasJwt: Boolean(session.jwtToken),
-      hasFeedToken: Boolean(session.feedToken)
-    });
+    const result = await angelService.login();
+    res.json(result);
   } catch (error) {
-    res.status(500).json({ status: 'failed', error: error.message });
+    res.status(500).json({ success: false, message: error.message });
   }
 });
 
-router.post('/quote', apiKeyAuth, async (req, res) => {
+router.post('/quote', async (req, res) => {
   try {
-    const { exchange, symboltoken, tradingsymbol } = req.body;
-    const quote = await angelService.getQuote({ exchange, symboltoken, tradingsymbol });
-    res.json({ success: true, quote });
+    const result = await angelService.getQuote(req.body);
+    res.json(result);
   } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
+    res.status(500).json({ success: false, message: error.message });
   }
 });
 
-router.post('/scan', apiKeyAuth, async (req, res) => {
-  try {
-    const stocks = req.body.stocks || [];
-    if (!Array.isArray(stocks) || stocks.length === 0) {
-      return res.status(400).json({ success: false, error: 'stocks array is required' });
-    }
+router.post('/scan', (req, res) => {
+  const items = Array.isArray(req.body?.stocks) ? req.body.stocks : [];
+  const results = items.map(item => makeDecision(item));
+  res.json({ success: true, count: results.length, results });
+});
 
-    const results = [];
-    for (const stock of stocks) {
-      try {
-        const quote = await angelService.getQuote(stock);
-        const decision = angelService.simpleSignalFromQuote(quote);
-        results.push({ ...stock, quote: quote.raw, decision });
-      } catch (err) {
-        results.push({ ...stock, error: err.message });
-      }
-    }
-
-    res.json({ success: true, count: results.length, results });
-  } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
-  }
+router.post('/decision', (req, res) => {
+  const decision = makeDecision(req.body || {});
+  res.json(decision);
 });
 
 module.exports = router;
