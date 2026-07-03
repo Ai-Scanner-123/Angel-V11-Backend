@@ -1,7 +1,7 @@
 {
   "name": "angel-v11-backend-production",
   "version": "1.0.0",
-  "description": "AI NSE Scanner V11 Production Backend with Angel One SmartAPI structure",
+  "description": "AI NSE Scanner V11 Backend with Angel One SmartAPI",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
