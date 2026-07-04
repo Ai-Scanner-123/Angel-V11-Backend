@@ -9,9 +9,14 @@ router.get('/status', (req, res) => {
     status: 'ok',
     env: {
       apiKey: !!process.env.ANGEL_API_KEY,
-      clientCode: !!(process.env.ANGEL_CLIENT_CODE || process.env.CLIENT_CODE),
-      password: !!(process.env.ANGEL_PASSWORD || process.env.PASSWORD),
-      totp: !!process.env.ANGEL_TOTP_SECRET
+     clientCode: !!(
+  process.env.ANGEL_CLIENT_CODE ||
+  process.env.ANGEL_CLIENT_ID
+),
+password: !!(
+  process.env.ANGEL_PASSWORD ||
+  process.env.ANGEL_PIN
+),      totp: !!process.env.ANGEL_TOTP_SECRET
     }
   });
 });
