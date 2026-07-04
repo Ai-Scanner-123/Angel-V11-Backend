@@ -2,16 +2,12 @@ const axios = require("axios");
 const speakeasy = require("speakeasy");
 
 let jwtToken = null;
+let instrumentList = null;
+let instrumentLoadedAt = null;
 
 const BASE_URL = "https://apiconnect.angelbroking.com";
-
-const tokenMap = {
-  TCS: "11536",
-  WIPRO: "3787",
-  EXIDEIND: "676",
-  SBIN: "3045",
-  RELIANCE: "2885"
-};
+const SCRIP_MASTER_URL =
+  "https://margincalculator.angelbroking.com/OpenAPI_File/files/OpenAPIScripMaster.json";
 
 function getHeaders() {
   return {
@@ -57,30 +53,112 @@ async function login() {
   };
 }
 
+async function loadInstruments() {
+  const now = Date.now();
+
+  if (
+    instrumentList &&
+    instrumentLoadedAt &&
+    now - instrumentLoadedAt < 24 * 60 * 60 * 1000
+  ) {
+    return instrumentList;
+  }
+
+  const res = await axios.get(SCRIP_MASTER_URL);
+
+  if (!Array.isArray(res.data)) {
+    throw new Error("Instrument list download failed");
+  }
+
+  instrumentList = res.data;
+  instrumentLoadedAt = now;
+
+  return instrumentList;
+}
+
+async function findNseToken(userSymbol) {
+  const list = await loadInstruments();
+
+  const cleanSymbol = String(userSymbol || "")
+    .toUpperCase()
+    .replace("-EQ", "")
+    .trim();
+
+  if (!cleanSymbol) {
+    throw new Error("Symbol is required");
+  }
+
+  const exactSymbol = `${cleanSymbol}-EQ`;
+
+  let item = list.find(
+    x =>
+      x.exch_seg === "NSE" &&
+      x.symbol === exactSymbol &&
+      x.token
+  );
+
+  if (!item) {
+    item = list.find(
+      x =>
+        x.exch_seg === "NSE" &&
+        x.name === cleanSymbol &&
+        x.symbol?.endsWith("-EQ") &&
+        x.token
+    );
+  }
+
+  if (!item) {
+    item = list.find(
+      x =>
+        x.exch_seg === "NSE" &&
+        (
+          x.symbol === cleanSymbol ||
+          x.symbol === exactSymbol ||
+          x.name === cleanSymbol
+        ) &&
+        x.token
+    );
+  }
+
+  if (!item) {
+    throw new Error(`NSE token not found for ${cleanSymbol}`);
+  }
+
+  return {
+    symbol: cleanSymbol,
+    tradingSymbol: item.symbol,
+    token: item.token,
+    name: item.name
+  };
+}
+
 async function getQuote(body = {}) {
   if (!jwtToken) {
     await login();
   }
 
-  const symbol = String(body.symbol || "TCS").toUpperCase();
-  const symbolToken = tokenMap[symbol];
-
-  if (!symbolToken) {
-    throw new Error(`Token not found for ${symbol}`);
-  }
+  const inputSymbol = body.symbol || body.stock || "TCS";
+  const found = await findNseToken(inputSymbol);
 
   const payload = {
     mode: "FULL",
     exchangeTokens: {
-      NSE: [symbolToken]
+      NSE: [found.token]
     }
   };
 
-  const res = await axios.post(
-    `${BASE_URL}/rest/secure/angelbroking/market/v1/quote/`,
-    payload,
-    { headers: getHeaders() }
-  );
+  let res;
+
+  try {
+    res = await axios.post(
+      `${BASE_URL}/rest/secure/angelbroking/market/v1/quote/`,
+      payload,
+      { headers: getHeaders() }
+    );
+  } catch (err) {
+    jwtToken = null;
+    throw new Error(err.response?.data?.message || err.message || "Quote fetch failed");
+  }
 
   if (!res.data?.status) {
     jwtToken = null;
@@ -96,7 +174,9 @@ async function getQuote(body = {}) {
   return {
     success: true,
     data: {
-      symbol,
+      symbol: found.symbol,
+      tradingSymbol: found.tradingSymbol,
+      token: found.token,
       ltp: item.ltp,
       price: item.ltp,
       previousClose: item.close,
@@ -112,5 +192,6 @@ async function getQuote(body = {}) {
 
 module.exports = {
   login,
-  getQuote
+  getQuote,
+  findNseToken
 };
