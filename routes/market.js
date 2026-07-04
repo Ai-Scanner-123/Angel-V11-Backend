@@ -7,9 +7,12 @@ router.get('/status', (req, res) => {
   res.json({
     success: true,
     status: 'ok',
-    service: 'AI NSE Scanner V11.1 Market API',
-    smartApiReady: Boolean(process.env.ANGEL_API_KEY && process.env.ANGEL_CLIENT_CODE),
-    decisionEngine: true
+    env: {
+      apiKey: !!process.env.ANGEL_API_KEY,
+      clientCode: !!process.env.ANGEL_CLIENT_CODE,
+      password: !!process.env.ANGEL_PASSWORD,
+      totp: !!process.env.ANGEL_TOTP_SECRET
+    }
   });
 });
 
