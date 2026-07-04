@@ -15,7 +15,17 @@ router.get('/status', (req, res) => {
     }
   });
 });
-
+router.get('/env-debug', (req, res) => {
+  res.json({
+    keys: Object.keys(process.env)
+      .filter(k =>
+        k.includes('ANGEL') ||
+        k.includes('CLIENT') ||
+        k.includes('PASS')
+      )
+      .sort()
+  });
+});
 router.post('/login', async (req, res) => {
   try {
     const result = await angelService.login();
