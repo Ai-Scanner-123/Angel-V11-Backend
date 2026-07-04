@@ -5,6 +5,9 @@ let jwtToken = null;
 let instrumentList = null;
 let instrumentLoadedAt = null;
 
+const quoteCache = {};
+const QUOTE_CACHE_MS = 5000;
+
 const BASE_URL = "https://apiconnect.angelbroking.com";
 const SCRIP_MASTER_URL =
   "https://margincalculator.angelbroking.com/OpenAPI_File/files/OpenAPIScripMaster.json";
@@ -29,11 +32,11 @@ async function login() {
     encoding: "base32"
   });
 
- const payload = {
-  clientcode: process.env.ANGEL_CLIENT_CODE || process.env.ANGEL_CLIENT_ID,
-  password: process.env.ANGEL_PASSWORD || process.env.ANGEL_PIN,
-  totp
-};
+  const payload = {
+    clientcode: process.env.ANGEL_CLIENT_CODE || process.env.ANGEL_CLIENT_ID,
+    password: process.env.ANGEL_PASSWORD || process.env.ANGEL_PIN,
+    totp
+  };
 
   const res = await axios.post(
     `${BASE_URL}/rest/auth/angelbroking/user/v1/loginByPassword`,
@@ -72,7 +75,6 @@ async function loadInstruments() {
 
   instrumentList = res.data;
   instrumentLoadedAt = now;
-
   return instrumentList;
 }
 
@@ -84,26 +86,15 @@ async function findNseToken(userSymbol) {
     .replace("-EQ", "")
     .trim();
 
-  if (!cleanSymbol) {
-    throw new Error("Symbol is required");
-  }
+  if (!cleanSymbol) throw new Error("Symbol is required");
 
   const exactSymbol = `${cleanSymbol}-EQ`;
 
-  let item = list.find(
-    x =>
-      x.exch_seg === "NSE" &&
-      x.symbol === exactSymbol &&
-      x.token
-  );
+  let item = list.find(x => x.exch_seg === "NSE" && x.symbol === exactSymbol && x.token);
 
   if (!item) {
     item = list.find(
-      x =>
-        x.exch_seg === "NSE" &&
-        x.name === cleanSymbol &&
-        x.symbol?.endsWith("-EQ") &&
-        x.token
+      x => x.exch_seg === "NSE" && x.name === cleanSymbol && x.symbol?.endsWith("-EQ") && x.token
     );
   }
 
@@ -111,18 +102,12 @@ async function findNseToken(userSymbol) {
     item = list.find(
       x =>
         x.exch_seg === "NSE" &&
-        (
-          x.symbol === cleanSymbol ||
-          x.symbol === exactSymbol ||
-          x.name === cleanSymbol
-        ) &&
+        (x.symbol === cleanSymbol || x.symbol === exactSymbol || x.name === cleanSymbol) &&
         x.token
     );
   }
 
-  if (!item) {
-    throw new Error(`NSE token not found for ${cleanSymbol}`);
-  }
+  if (!item) throw new Error(`NSE token not found for ${cleanSymbol}`);
 
   return {
     symbol: cleanSymbol,
@@ -133,11 +118,18 @@ async function findNseToken(userSymbol) {
 }
 
 async function getQuote(body = {}) {
-  if (!jwtToken) {
-    await login();
-  }
+  if (!jwtToken) await login();
 
   const inputSymbol = body.symbol || body.stock || "TCS";
+  const cleanInputSymbol = String(inputSymbol).toUpperCase().replace("-EQ", "").trim();
+
+  if (
+    quoteCache[cleanInputSymbol] &&
+    Date.now() - quoteCache[cleanInputSymbol].time < QUOTE_CACHE_MS
+  ) {
+    return quoteCache[cleanInputSymbol].data;
+  }
+
   const found = await findNseToken(inputSymbol);
 
   const payload = {
@@ -166,12 +158,9 @@ async function getQuote(body = {}) {
   }
 
   const item = res.data?.data?.fetched?.[0];
+  if (!item) throw new Error("No quote data received");
 
-  if (!item) {
-    throw new Error("No quote data received");
-  }
-
-  return {
+  const result = {
     success: true,
     data: {
       symbol: found.symbol,
@@ -188,6 +177,13 @@ async function getQuote(body = {}) {
       raw: item
     }
   };
+
+  quoteCache[cleanInputSymbol] = {
+    time: Date.now(),
+    data: result
+  };
+
+  return result;
 }
 
 module.exports = {
