@@ -29,9 +29,9 @@ async function login() {
     encoding: "base32"
   });
 
-  const payload = {
-  clientcode: process.env.ANGEL_CLIENT_CODE || process.env.CLIENT_CODE,
-  password: process.env.ANGEL_PASSWORD || process.env.PASSWORD,
+ const payload = {
+  clientcode: process.env.ANGEL_CLIENT_CODE || process.env.ANGEL_CLIENT_ID,
+  password: process.env.ANGEL_PASSWORD || process.env.ANGEL_PIN,
   totp
 };
 
