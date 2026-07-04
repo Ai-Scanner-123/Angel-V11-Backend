@@ -21,7 +21,7 @@ app.get('/', (req, res) => {
     status: 'ok',
     name: 'AI NSE Scanner V11 Backend',
     message: 'Backend is running',
-    endpoints: ['/health', '/api/market/quote', '/api/market/decision', '/api/market/scan']
+    endpoints: ['/health', '/api/market/quote', '/api/market/decision', '/api/market/scan', '/api/market/events']
   });
 });
 
