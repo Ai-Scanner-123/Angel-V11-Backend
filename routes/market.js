@@ -78,4 +78,20 @@ router.post('/events', async (req, res) => {
     });
   }
 });
+router.post('/events', async (req, res) => {
+  try {
+    const { symbol } = req.body;
+    const event = await eventService.getCorporateEvents(symbol);
+
+    res.json({
+      success: true,
+      data: event
+    });
+  } catch (err) {
+    res.status(500).json({
+      success: false,
+      message: err.message
+    });
+  }
+});
 module.exports = router;
