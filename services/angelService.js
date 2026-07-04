@@ -30,10 +30,10 @@ async function login() {
   });
 
   const payload = {
-    clientcode: process.env.ANGEL_CLIENT_CODE,
-    password: process.env.ANGEL_PASSWORD,
-    totp
-  };
+  clientcode: process.env.ANGEL_CLIENT_CODE || process.env.CLIENT_CODE,
+  password: process.env.ANGEL_PASSWORD || process.env.PASSWORD,
+  totp
+};
 
   const res = await axios.post(
     `${BASE_URL}/rest/auth/angelbroking/user/v1/loginByPassword`,
