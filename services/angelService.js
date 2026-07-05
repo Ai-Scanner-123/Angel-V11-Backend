@@ -185,9 +185,48 @@ async function getQuote(body = {}) {
 
   return result;
 }
+async function getCandles(body = {}) {
+  if (!jwtToken) await login();
 
+  const inputSymbol = body.symbol || body.stock || "TCS";
+  const found = await findNseToken(inputSymbol);
+
+  const now = new Date();
+  const from = new Date(now.getTime() - 3 * 24 * 60 * 60 * 1000);
+
+  const formatDate = d =>
+    d.toISOString().slice(0, 19).replace("T", " ");
+
+  const payload = {
+    exchange: "NSE",
+    symboltoken: found.token,
+    interval: "FIVE_MINUTE",
+    fromdate: formatDate(from),
+    todate: formatDate(now)
+  };
+
+  const res = await axios.post(
+    `${BASE_URL}/rest/secure/angelbroking/historical/v1/getCandleData`,
+    payload,
+    { headers: getHeaders() }
+  );
+
+  if (!res.data?.status) {
+    throw new Error(res.data?.message || "Candle data failed");
+  }
+
+  const candles = res.data.data || [];
+
+  return {
+    success: true,
+    symbol: found.symbol,
+    token: found.token,
+    candles
+  };
+}
 module.exports = {
   login,
   getQuote,
+  getCandles,
   findNseToken
 };
