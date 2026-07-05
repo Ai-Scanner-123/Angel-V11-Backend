@@ -40,7 +40,14 @@ router.post('/login', async (req, res) => {
     res.status(500).json({ success: false, message: error.message });
   }
 });
-
+router.post('/candles', async (req, res) => {
+  try {
+    const result = await angelService.getCandles(req.body);
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
 router.post('/quote', async (req, res) => {
   try {
     const result = await angelService.getQuote(req.body);
@@ -64,22 +71,6 @@ router.post('/events', async (req, res) => {
       data: event
     });
 
-  } catch (err) {
-    res.status(500).json({
-      success: false,
-      message: err.message
-    });
-  }
-});
-router.post('/events', async (req, res) => {
-  try {
-    const { symbol } = req.body;
-    const event = await eventService.getCorporateEvents(symbol);
-
-    res.json({
-      success: true,
-      data: event
-    });
   } catch (err) {
     res.status(500).json({
       success: false,
