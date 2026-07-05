@@ -210,59 +210,46 @@ function calcRSI(closes, period = 14) {
     if (diff >= 0) gains += diff;
     else losses += Math.abs(diff);
   }
-
-  const avgGain = gains / period;
+const avgGain = gains / period;
   const avgLoss = losses / period;
-
-  if (avgLoss === 0) return 100;
-
-  const rs = avgGain / avgLoss;
+ if (avgLoss === 0) return 100;
+const rs = avgGain / avgLoss;
   return Number((100 - (100 / (1 + rs))).toFixed(2));
 }
 async function getCandles(body = {}) {
   if (!jwtToken) await login();
-
-  const inputSymbol = body.symbol || body.stock || "TCS";
+const inputSymbol = body.symbol || body.stock || "TCS";
   const found = await findNseToken(inputSymbol);
-
- const now = new Date();
+const now = new Date();
 const from = new Date();
-
 from.setHours(9, 15, 0, 0);
 now.setHours(15, 30, 0, 0);
-
-  const formatDate = d =>
+ const formatDate = d =>
     d.toISOString().slice(0, 19).replace("T", " ");
-
-  const payload = {
-    exchange: "NSE",
-    symboltoken: found.token,
-    interval: "FIVE_MINUTE",
-    fromdate: formatDate(from),
-  let res;
-
+const payload = {
+  exchange: "NSE",
+  symboltoken: found.token,
+  interval: "FIVE_MINUTE",
+  fromdate: formatDate(from),
+  todate: formatDate(now)
+};
+let res;
 try {
   console.log("CANDLE PAYLOAD:", payload);
-
-  res = await axios.post(
+ res = await axios.post(
     `${BASE_URL}/rest/secure/angelbroking/historical/v1/getCandleData`,
     payload,
     { headers: getHeaders() }
   );
-
-} catch (err) {
-  console.log("CANDLE API ERROR:", err.response?.data || err.message);
+ } catch (err) {
+  console.log("STATUS:", err.response?.status);
+  console.log("DATA:", err.response?.data);
   throw err;
 }
-    payload,
-    { headers: getHeaders() }
-  );
-
   if (!res.data?.status) {
     throw new Error(res.data?.message || "Candle data failed");
   }
-
-  const candles = res.data.data || [];
+ const candles = res.data.data || [];
 console.log("Candles Count:", candles.length);
 console.log("First Candle:", candles[0]);
   return {
