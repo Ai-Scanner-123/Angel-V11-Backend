@@ -159,7 +159,20 @@ async function getQuote(body = {}) {
 
   const item = res.data?.data?.fetched?.[0];
   if (!item) throw new Error("No quote data received");
+let liveRsi = 55;
 
+try {
+  const candleResult = await getCandles({ symbol: found.symbol });
+
+  const closes = (candleResult.candles || [])
+    .map(c => Number(c[4]))
+    .filter(Boolean);
+
+  liveRsi = calcRSI(closes);
+
+} catch (err) {
+  console.log("RSI Error:", err.message);
+}
   const result = {
     success: true,
     data: {
@@ -173,7 +186,7 @@ async function getQuote(body = {}) {
       low: item.low,
       open: item.open,
       volume: item.tradeVolume,
-      rsi: 55,
+    rsi: liveRsi,
       raw: item
     }
   };
@@ -184,6 +197,27 @@ async function getQuote(body = {}) {
   };
 
   return result;
+}
+function calcRSI(closes, period = 14) {
+  if (!Array.isArray(closes) || closes.length < period + 1) return 55;
+
+  let gains = 0;
+  let losses = 0;
+
+  for (let i = closes.length - period; i < closes.length; i++) {
+    const diff = closes[i] - closes[i - 1];
+
+    if (diff >= 0) gains += diff;
+    else losses += Math.abs(diff);
+  }
+
+  const avgGain = gains / period;
+  const avgLoss = losses / period;
+
+  if (avgLoss === 0) return 100;
+
+  const rs = avgGain / avgLoss;
+  return Number((100 - (100 / (1 + rs))).toFixed(2));
 }
 async function getCandles(body = {}) {
   if (!jwtToken) await login();
