@@ -250,7 +250,8 @@ async function getCandles(body = {}) {
   }
 
   const candles = res.data.data || [];
-
+console.log("Candles Count:", candles.length);
+console.log("First Candle:", candles[0]);
   return {
     success: true,
     symbol: found.symbol,
