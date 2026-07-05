@@ -239,11 +239,21 @@ now.setHours(15, 30, 0, 0);
     symboltoken: found.token,
     interval: "FIVE_MINUTE",
     fromdate: formatDate(from),
-    todate: formatDate(now)
-  };
+  let res;
 
-  const res = await axios.post(
+try {
+  console.log("CANDLE PAYLOAD:", payload);
+
+  res = await axios.post(
     `${BASE_URL}/rest/secure/angelbroking/historical/v1/getCandleData`,
+    payload,
+    { headers: getHeaders() }
+  );
+
+} catch (err) {
+  console.log("CANDLE API ERROR:", err.response?.data || err.message);
+  throw err;
+}
     payload,
     { headers: getHeaders() }
   );
