@@ -225,8 +225,11 @@ async function getCandles(body = {}) {
   const inputSymbol = body.symbol || body.stock || "TCS";
   const found = await findNseToken(inputSymbol);
 
-  const now = new Date();
- const from = new Date(now.getTime() - 1 * 24 * 60 * 60 * 1000);
+ const now = new Date();
+const from = new Date();
+
+from.setHours(9, 15, 0, 0);
+now.setHours(15, 30, 0, 0);
 
   const formatDate = d =>
     d.toISOString().slice(0, 19).replace("T", " ");
