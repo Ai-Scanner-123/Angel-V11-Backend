@@ -160,7 +160,7 @@ async function getQuote(body = {}) {
 
   const item = res.data?.data?.fetched?.[0];
   if (!item) throw new Error("No quote data received");
-let liveRsi = 55;
+let liveRsi = 0;
 
 try {
   const candleResult = await getCandles({ symbol: found.symbol });
