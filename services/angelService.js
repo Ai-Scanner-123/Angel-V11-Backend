@@ -163,16 +163,10 @@ async function getQuote(body = {}) {
 let liveRsi = 0;
 
 try {
-  const candleResult = await getCandles({ symbol: found.symbol });
-
-  const closes = (candleResult.candles || [])
-    .map(c => Number(c[4]))
-    .filter(Boolean);
-
-  liveRsi = calcRSI(closes);
-
+    liveRsi = await getYahooRSI(found.symbol);
+    console.log("Live Yahoo RSI:", liveRsi);
 } catch (err) {
-  console.log("RSI Error:", err.message);
+    console.log("RSI Error:", err.message);
 }
   const result = {
     success: true,
@@ -222,6 +216,23 @@ function calcRSI(closes, period = 14) {
     const rs = avgGain / avgLoss;
     return Math.round(100 - (100 / (1 + rs)));
 }
+async function getYahooRSI(symbol) {
+  try {
+    const url = `https://query1.finance.yahoo.com/v8/finance/chart/${symbol}.NS?range=1d&interval=5m`;
+    const res = await axios.get(url);
+
+    const closes = res.data.chart.result[0].indicators.quote[0].close
+      .filter(x => x !== null && x !== undefined);
+
+    console.log("Yahoo RSI candles:", closes.length);
+
+    if (closes.length < 15) return 0;
+
+    return calcRSI(closes);
+  } catch (err) {
+    console.log("Yahoo RSI Error:", err.message);
+    return 0;
+  }
 async function getCandles(body = {}) {
   if (!jwtToken) await login();
 const inputSymbol = body.symbol || body.stock || "TCS";
