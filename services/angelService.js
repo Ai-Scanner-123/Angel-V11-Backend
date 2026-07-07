@@ -5,7 +5,8 @@ let jwtToken = null;
 let instrumentList = null;
 let instrumentLoadedAt = null;
 
-const quoteCache = {};
+const candleCache = {};
+const CANDLE_CACHE_MS = 60000;
 const QUOTE_CACHE_MS = 5000;
 
 const BASE_URL = "https://apiconnect.angelbroking.com";
@@ -225,6 +226,13 @@ async function getCandles(body = {}) {
   if (!jwtToken) await login();
 const inputSymbol = body.symbol || body.stock || "TCS";
   const found = await findNseToken(inputSymbol);
+  const cacheKey = found.symbol;
+const cached = candleCache[cacheKey];
+
+if (cached && (Date.now() - cached.time < CANDLE_CACHE_MS)) {
+    console.log("Using candle cache:", cacheKey);
+    return cached.data;
+}
 const now = new Date();
 const from = new Date();
 from.setHours(9, 15, 0, 0);
@@ -257,16 +265,24 @@ try {
  const candles = res.data.data || [];
 console.log("Candles Count:", candles.length);
 console.log("First Candle:", candles[0]);
-  return {
+const result = {
     success: true,
     symbol: found.symbol,
     token: found.token,
     candles
-  };
-}
-module.exports = {
-  login,
-  getQuote,
-  getCandles,
-  findNseToken
 };
+
+275  candleCache[cacheKey] = {
+276      time: Date.now(),
+277      data: result
+278  };
+
+280  return result;
+281  }
+
+282  module.exports = {
+283      login,
+284      getQuote,
+285      getCandles,
+286      findNseToken
+287  };
