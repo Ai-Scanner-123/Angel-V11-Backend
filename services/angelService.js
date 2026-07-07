@@ -6,6 +6,8 @@ let instrumentList = null;
 let instrumentLoadedAt = null;
 
 const candleCache = {};
+const quoteCache = {};
+
 const CANDLE_CACHE_MS = 60000;
 const QUOTE_CACHE_MS = 5000;
 
