@@ -50,16 +50,34 @@ function buildDecision(input = {}) {
     warnings.push("Trend weak hai");
   }
 
-  if (rsi >= 45 && rsi <= 68) {
-    score += 10;
-    reasons.push("RSI healthy zone me hai");
-  } else if (rsi > 75) {
-    score -= 10;
-    warnings.push("RSI overbought hai, chase na kare");
-  } else if (rsi < 35) {
-    score -= 10;
-    warnings.push("RSI weak zone me hai");
-  }
+ // ===== RSI Logic V11.3 =====
+if (rsi >= 50 && rsi <= 62) {
+    score += 14;
+    reasons.push("RSI bullish zone me hai");
+}
+else if (rsi >= 38 && rsi <= 48) {
+    score -= 14;
+    warnings.push("RSI bearish zone me hai");
+}
+else if (rsi > 62 && rsi <= 70) {
+    score += 5;
+    warnings.push("RSI high hai - confirmation ka wait kare");
+}
+else if (rsi >= 30 && rsi < 38) {
+    score -= 5;
+    warnings.push("RSI low hai - confirmation ka wait kare");
+}
+else if (rsi > 70) {
+    score -= 20;
+    warnings.push("RSI overbought hai - fresh buy avoid kare");
+}
+else if (rsi < 30) {
+    score -= 20;
+    warnings.push("RSI oversold hai - fresh sell avoid kare");
+}
+else {
+    warnings.push("RSI neutral hai");
+}
 
   if (macd > signal) {
     score += 10;
