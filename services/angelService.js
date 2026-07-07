@@ -167,7 +167,10 @@ let liveRsi = 0;
 try {
     const candleResult = await getCandles({ symbol: found.symbol });
 const closes = (candleResult.candles || []).map(c => Number(c[4])).filter(Boolean);
+  console.log("Close Count:", closes.length);
+console.log("Close Prices:", closes);
 liveRsi = calcRSI(closes);
+  
 console.log("Live Angel RSI:", liveRsi);} catch (err) {
     console.log("RSI Error:", err.message);
 }
