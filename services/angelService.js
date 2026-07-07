@@ -165,9 +165,10 @@ async function getQuote(body = {}) {
 let liveRsi = 0;
 
 try {
-    liveRsi = await getYahooRSI(found.symbol);
-    console.log("Live Yahoo RSI:", liveRsi);
-} catch (err) {
+    const candleResult = await getCandles({ symbol: found.symbol });
+const closes = (candleResult.candles || []).map(c => Number(c[4])).filter(Boolean);
+liveRsi = calcRSI(closes);
+console.log("Live Angel RSI:", liveRsi);} catch (err) {
     console.log("RSI Error:", err.message);
 }
   const result = {
