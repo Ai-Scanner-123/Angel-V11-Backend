@@ -199,22 +199,27 @@ try {
   return result;
 }
 function calcRSI(closes, period = 14) {
+  console.log("RSI candles count:", closes?.length);
+
   if (!Array.isArray(closes) || closes.length < period + 1) return 55;
 
   let gains = 0;
   let losses = 0;
+ 
+    for (let i = closes.length - period; i < closes.length; i++) {
+        const diff = closes[i] - closes[i - 1];
 
-  for (let i = closes.length - period; i < closes.length; i++) {
-    const diff = closes[i] - closes[i - 1];
+        if (diff >= 0) gains += diff;
+        else losses += Math.abs(diff);
+    }
 
-    if (diff >= 0) gains += diff;
-    else losses += Math.abs(diff);
-  }
-const avgGain = gains / period;
-  const avgLoss = losses / period;
- if (avgLoss === 0) return 100;
-const rs = avgGain / avgLoss;
-  return Number((100 - (100 / (1 + rs))).toFixed(2));
+    const avgGain = gains / period;
+    const avgLoss = losses / period;
+
+    if (avgLoss === 0) return 100;
+
+    const rs = avgGain / avgLoss;
+    return Math.round(100 - (100 / (1 + rs)));
 }
 async function getCandles(body = {}) {
   if (!jwtToken) await login();
