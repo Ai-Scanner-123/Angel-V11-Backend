@@ -282,18 +282,16 @@ const result = {
     token: found.token,
     candles
 };
+candleCache[cacheKey] = {
+  time: Date.now(),
+  data: result
+};
 
-275  candleCache[cacheKey] = {
-276      time: Date.now(),
-277      data: result
-278  };
-
-280  return result;
-281  }
-
-282  module.exports = {
-283      login,
-284      getQuote,
-285      getCandles,
-286      findNseToken
-287  };
+return result;
+  }
+module.exports = {
+  login,
+  getQuote,
+  getCandles,
+  findNseToken
+};
