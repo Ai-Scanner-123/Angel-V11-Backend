@@ -233,6 +233,7 @@ async function getYahooRSI(symbol) {
     console.log("Yahoo RSI Error:", err.message);
     return 0;
   }
+  }
 async function getCandles(body = {}) {
   if (!jwtToken) await login();
 const inputSymbol = body.symbol || body.stock || "TCS";
