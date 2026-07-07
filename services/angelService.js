@@ -277,18 +277,20 @@ try {
 console.log("Candles Count:", candles.length);
 console.log("First Candle:", candles[0]);
 const result = {
-    success: true,
-    symbol: found.symbol,
-    token: found.token,
-    candles
+  success: true,
+  symbol: found.symbol,
+  token: found.token,
+  candles
 };
+
 candleCache[cacheKey] = {
   time: Date.now(),
   data: result
 };
 
 return result;
-  }
+}
+
 module.exports = {
   login,
   getQuote,
