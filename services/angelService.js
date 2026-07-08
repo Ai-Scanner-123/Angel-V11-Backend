@@ -282,26 +282,26 @@ const payload = {
   todate
 };
 let res;
+
 try {
   console.log("TOKEN:", jwtToken ? "YES" : "NO");
-console.log("HEADERS:", getHeaders());
-console.log("PAYLOAD:", JSON.stringify(payload));
+  console.log("HEADERS:", getHeaders());
+  console.log("PAYLOAD:", JSON.stringify(payload));
   console.log("CANDLE PAYLOAD:", payload);
- res = await axios.post(
-    `${BASE_URL}/rest/secure/angelbroking/historical/v1/getCandleData
+
+  res = await axios.post(
+    `${BASE_URL}/rest/secure/angelbroking/historical/v1/getCandleData`,
     payload,
     { headers: getHeaders() }
   );
+
 } catch (err) {
   console.log("STATUS:", err.response?.status);
-
   console.log(
     "DATA:",
     JSON.stringify(err.response?.data || err.message, null, 2)
   );
-
   console.log("FULL ERROR:", err.toString());
-
   throw err;
 }
   if (!res.data?.status) {
