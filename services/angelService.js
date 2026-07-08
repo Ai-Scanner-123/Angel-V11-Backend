@@ -275,7 +275,7 @@ if (toHour > 15 || (toHour === 15 && toMinute >= 30)) {
 const todate = `${yyyy}-${mm}-${dd} ${pad(toHour)}:${pad(toMinute)}:00`;
 
 const payload = {
-  exchange: "NSE",
+exchange: "NSE_CM", 
   symboltoken: found.token,
  interval: "FIVE_MINUTE",
   fromdate,
