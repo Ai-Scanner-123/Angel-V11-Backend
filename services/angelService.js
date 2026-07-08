@@ -218,6 +218,115 @@ function normalizeCandles(rawCandles) {
     .filter(c => Number.isFinite(c.close));
 }
 
+function calcEMA(closes, period) {
+  if (!Array.isArray(closes) || closes.length < period) return null;
+
+  const cleanCloses = closes.map(Number).filter(Number.isFinite);
+  if (cleanCloses.length < period) return null;
+
+  const multiplier = 2 / (period + 1);
+  let ema = cleanCloses.slice(0, period).reduce((sum, val) => sum + val, 0) / period;
+
+  for (let i = period; i < cleanCloses.length; i++) {
+    ema = (cleanCloses[i] - ema) * multiplier + ema;
+  }
+
+  return Number(ema.toFixed(2));
+}
+
+
+function calcEMAValues(values, period) {
+  if (!Array.isArray(values) || values.length < period) return [];
+
+  const cleanValues = values.map(Number).filter(Number.isFinite);
+  if (cleanValues.length < period) return [];
+
+  const multiplier = 2 / (period + 1);
+  let ema = cleanValues.slice(0, period).reduce((sum, val) => sum + val, 0) / period;
+  const result = [];
+
+  // EMA starts after first SMA seed. Push the first EMA at index period - 1.
+  result.push(ema);
+
+  for (let i = period; i < cleanValues.length; i++) {
+    ema = (cleanValues[i] - ema) * multiplier + ema;
+    result.push(ema);
+  }
+
+  return result;
+}
+
+function calcMACD(closes, fastPeriod = 12, slowPeriod = 26, signalPeriod = 9) {
+  if (!Array.isArray(closes) || closes.length < slowPeriod + signalPeriod) {
+    return {
+      macd: null,
+      macdSignal: null,
+      macdHistogram: null,
+      macdStatus: "UNAVAILABLE"
+    };
+  }
+
+  const cleanCloses = closes.map(Number).filter(Number.isFinite);
+  if (cleanCloses.length < slowPeriod + signalPeriod) {
+    return {
+      macd: null,
+      macdSignal: null,
+      macdHistogram: null,
+      macdStatus: "UNAVAILABLE"
+    };
+  }
+
+  const emaFastValues = calcEMAValues(cleanCloses, fastPeriod);
+  const emaSlowValues = calcEMAValues(cleanCloses, slowPeriod);
+
+  if (!emaFastValues.length || !emaSlowValues.length) {
+    return {
+      macd: null,
+      macdSignal: null,
+      macdHistogram: null,
+      macdStatus: "UNAVAILABLE"
+    };
+  }
+
+  // Slow EMA starts later than Fast EMA, so align fast EMA from the slow EMA start point.
+  const offset = slowPeriod - fastPeriod;
+  const macdSeries = emaSlowValues
+    .map((slowEma, index) => {
+      const fastEma = emaFastValues[index + offset];
+      if (!Number.isFinite(fastEma) || !Number.isFinite(slowEma)) return null;
+      return fastEma - slowEma;
+    })
+    .filter(Number.isFinite);
+
+  if (macdSeries.length < signalPeriod) {
+    return {
+      macd: null,
+      macdSignal: null,
+      macdHistogram: null,
+      macdStatus: "UNAVAILABLE"
+    };
+  }
+
+  const signalSeries = calcEMAValues(macdSeries, signalPeriod);
+  const latestMacd = macdSeries[macdSeries.length - 1];
+  const latestSignal = signalSeries[signalSeries.length - 1];
+  const latestHistogram = latestMacd - latestSignal;
+
+  let macdStatus = "Neutral / Wait";
+  if (latestMacd > latestSignal && latestHistogram > 0) {
+    macdStatus = "Bullish Momentum";
+  } else if (latestMacd < latestSignal && latestHistogram < 0) {
+    macdStatus = "Bearish Momentum";
+  }
+
+  return {
+    macd: Number(latestMacd.toFixed(2)),
+    macdSignal: Number(latestSignal.toFixed(2)),
+    macdHistogram: Number(latestHistogram.toFixed(2)),
+    macdStatus
+  };
+}
+
 function calcRSI(closes, period = 14) {
   if (!Array.isArray(closes) || closes.length < period + 1) return null;
 
@@ -244,25 +353,6 @@ function calcRSI(closes, period = 14) {
   if (avgLoss === 0) return 100;
   const rs = avgGain / avgLoss;
   return Number((100 - 100 / (1 + rs)).toFixed(2));
-}
-
-function calcEMA(closes, period) {
-  if (!Array.isArray(closes) || closes.length < period) return null;
-
-  const cleanCloses = closes
-    .map(v => Number(v))
-    .filter(Number.isFinite);
-
-  if (cleanCloses.length < period) return null;
-
-  const multiplier = 2 / (period + 1);
-  let ema = cleanCloses.slice(0, period).reduce((sum, val) => sum + val, 0) / period;
-
-  for (let i = period; i < cleanCloses.length; i++) {
-    ema = (cleanCloses[i] - ema) * multiplier + ema;
-  }
-
-  return Number(ema.toFixed(2));
 }
 
 async function getCandles(body = {}) {
@@ -376,10 +466,13 @@ async function getQuote(body = {}) {
   if (!item) throw new Error("No quote data received");
 
   let liveRsi = null;
-  let liveEma9 = null;
-  let liveEma20 = null;
+  let ema9 = null;
+  let ema20 = null;
+  let macd = null;
+  let macdSignal = null;
+  let macdHistogram = null;
+  let macdStatus = "UNAVAILABLE";
   let rsiSource = "ANGEL_CANDLES";
-  let emaSource = "ANGEL_CANDLES";
   let candleCount = 0;
 
   try {
@@ -390,12 +483,17 @@ async function getQuote(body = {}) {
 
     candleCount = closes.length;
     liveRsi = calcRSI(closes);
-    liveEma9 = calcEMA(closes, 9);
-    liveEma20 = calcEMA(closes, 20);
+    ema9 = calcEMA(closes, 9);
+    ema20 = calcEMA(closes, 20);
+
+    const macdResult = calcMACD(closes, 12, 26, 9);
+    macd = macdResult.macd;
+    macdSignal = macdResult.macdSignal;
+    macdHistogram = macdResult.macdHistogram;
+    macdStatus = macdResult.macdStatus;
   } catch (err) {
     rsiSource = "UNAVAILABLE";
-    emaSource = "UNAVAILABLE";
-    console.log("RSI/EMA Error:", err.message);
+    console.log("RSI Error:", err.message);
   }
 
   const result = {
@@ -412,10 +510,13 @@ async function getQuote(body = {}) {
       open: item.open,
       volume: item.tradeVolume,
       rsi: liveRsi,
-      ema9: liveEma9,
-      ema20: liveEma20,
+      ema9,
+      ema20,
+      macd,
+      macdSignal,
+      macdHistogram,
+      macdStatus,
       rsiSource,
-      emaSource,
       candleCount,
       raw: item
     }
@@ -431,5 +532,7 @@ module.exports = {
   getCandles,
   findNseToken,
   calcRSI,
-  calcEMA
+  calcEMA,
+  calcEMAValues,
+  calcMACD
 };
