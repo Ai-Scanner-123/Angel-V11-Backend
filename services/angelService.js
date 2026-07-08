@@ -246,6 +246,25 @@ function calcRSI(closes, period = 14) {
   return Number((100 - 100 / (1 + rs)).toFixed(2));
 }
 
+function calcEMA(closes, period) {
+  if (!Array.isArray(closes) || closes.length < period) return null;
+
+  const cleanCloses = closes
+    .map(v => Number(v))
+    .filter(Number.isFinite);
+
+  if (cleanCloses.length < period) return null;
+
+  const multiplier = 2 / (period + 1);
+  let ema = cleanCloses.slice(0, period).reduce((sum, val) => sum + val, 0) / period;
+
+  for (let i = period; i < cleanCloses.length; i++) {
+    ema = (cleanCloses[i] - ema) * multiplier + ema;
+  }
+
+  return Number(ema.toFixed(2));
+}
+
 async function getCandles(body = {}) {
   await ensureLogin();
 
@@ -357,17 +376,26 @@ async function getQuote(body = {}) {
   if (!item) throw new Error("No quote data received");
 
   let liveRsi = null;
+  let liveEma9 = null;
+  let liveEma20 = null;
   let rsiSource = "ANGEL_CANDLES";
+  let emaSource = "ANGEL_CANDLES";
   let candleCount = 0;
 
   try {
     const candleResult = await getCandles({ symbol: found.symbol, interval: "FIVE_MINUTE" });
-    const closes = candleResult.candles.map(c => c.close).filter(Number.isFinite);
+    const closes = candleResult.candles
+      .map(c => Number(c.close))
+      .filter(Number.isFinite);
+
     candleCount = closes.length;
     liveRsi = calcRSI(closes);
+    liveEma9 = calcEMA(closes, 9);
+    liveEma20 = calcEMA(closes, 20);
   } catch (err) {
     rsiSource = "UNAVAILABLE";
-    console.log("RSI Error:", err.message);
+    emaSource = "UNAVAILABLE";
+    console.log("RSI/EMA Error:", err.message);
   }
 
   const result = {
@@ -384,7 +412,10 @@ async function getQuote(body = {}) {
       open: item.open,
       volume: item.tradeVolume,
       rsi: liveRsi,
+      ema9: liveEma9,
+      ema20: liveEma20,
       rsiSource,
+      emaSource,
       candleCount,
       raw: item
     }
@@ -399,5 +430,6 @@ module.exports = {
   getQuote,
   getCandles,
   findNseToken,
-  calcRSI
+  calcRSI,
+  calcEMA
 };

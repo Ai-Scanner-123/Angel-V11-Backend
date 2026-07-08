@@ -23,8 +23,8 @@ function buildDecision(input = {}) {
   const rsi = num(input.rsi, 50);
   const macd = num(input.macd, 0);
   const signal = num(input.macdSignal || input.signal, 0);
+  const ema9 = num(input.ema9, price);
   const ema20 = num(input.ema20, price);
-  const ema50 = num(input.ema50, price);
   const marketTrend = String(input.marketTrend || "neutral").toLowerCase();
 
   const range = Math.max(high - low, price * 0.006);
@@ -42,12 +42,17 @@ function buildDecision(input = {}) {
     warnings.push("Price VWAP ke neeche hai");
   }
 
-  if (ema20 > ema50 && price > ema20) {
-    score += 15;
-    reasons.push("Trend strong hai");
-  } else if (ema20 < ema50 && price < ema20) {
-    score -= 15;
-    warnings.push("Trend weak hai");
+  const emaBullish = price > ema9 && ema9 > ema20;
+  const emaBearish = price < ema9 && ema9 < ema20;
+
+  if (emaBullish) {
+    score += 18;
+    reasons.push("EMA trend bullish hai: Price > EMA9 > EMA20");
+  } else if (emaBearish) {
+    score -= 18;
+    warnings.push("EMA trend bearish hai: Price < EMA9 < EMA20");
+  } else {
+    warnings.push("EMA trend clear nahi hai");
   }
 
  // ===== RSI Logic V11.3 =====
@@ -114,8 +119,10 @@ else {
   score = clamp(score, 0, 100);
 
   let decision = "WAIT";
-  if (score >= 80) decision = "BUY";
-  if (score <= 30) decision = "SELL";
+  if (score >= 80 && emaBullish && rsi > 55) decision = "STRONG BUY";
+  else if (score >= 65 && emaBullish && rsi >= 50) decision = "BUY";
+  else if (score <= 30 && emaBearish && rsi < 45) decision = "STRONG SELL";
+  else if (score <= 40 && emaBearish && rsi <= 50) decision = "SELL";
 
   const risk = score >= 80 ? "LOW" : score >= 60 ? "MEDIUM" : "HIGH";
 
@@ -144,6 +151,8 @@ else {
     tradeScore: score,
     risk,
     price: round(price),
+    ema9: round(ema9),
+    ema20: round(ema20),
     entryZone: {
       low: round(entryLow),
       high: round(entryHigh)
