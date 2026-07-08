@@ -294,7 +294,8 @@ console.log("PAYLOAD:", JSON.stringify(payload));
   );
  } catch (err) {
   console.log("STATUS:", err.response?.status);
-console.log("DATA:", JSON.stringify(err.response?.data));  throw err;
+console.log("DATA:", JSON.stringify(err.response?.data)); 
+throw err;
 }
   if (!res.data?.status) {
     throw new Error(res.data?.message || "Candle data failed");
