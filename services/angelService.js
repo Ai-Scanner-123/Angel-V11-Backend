@@ -251,29 +251,35 @@ if (cached && (Date.now() - cached.time < CANDLE_CACHE_MS)) {
     console.log("Using candle cache:", cacheKey);
     return cached.data;
 }
-const now = new Date();
-const from = new Date();
+const istNow = new Date(Date.now() + 5.5 * 60 * 60 * 1000);
 
-from.setHours(9, 15, 0, 0);
+const pad = (n) => String(n).padStart(2, "0");
 
-const current = new Date();
+const yyyy = istNow.getUTCFullYear();
+const mm = pad(istNow.getUTCMonth() + 1);
+const dd = pad(istNow.getUTCDate());
 
-if (current.getHours() < 15 || (current.getHours() === 15 && current.getMinutes() < 30)) {
-  now.setHours(current.getHours(), current.getMinutes(), 0, 0);
-} else {
-  now.setHours(15, 25, 0, 0);
+const currentHour = istNow.getUTCHours();
+const currentMinute = istNow.getUTCMinutes();
+
+const fromdate = `${yyyy}-${mm}-${dd} 09:15:00`;
+
+let toHour = currentHour;
+let toMinute = currentMinute;
+
+if (toHour > 15 || (toHour === 15 && toMinute >= 30)) {
+  toHour = 15;
+  toMinute = 25;
 }
-const formatDate = (d) => {
-  const pad = (n) => String(n).padStart(2, "0");
 
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:00`;
-};
+const todate = `${yyyy}-${mm}-${dd} ${pad(toHour)}:${pad(toMinute)}:00`;
+
 const payload = {
   exchange: "NSE",
   symboltoken: found.token,
   interval: "FIVE_MINUTE",
-  fromdate: formatDate(from),
-  todate: formatDate(now)
+  fromdate,
+  todate
 };
 let res;
 try {
