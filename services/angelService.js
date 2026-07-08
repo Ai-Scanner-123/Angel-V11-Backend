@@ -284,6 +284,7 @@ const payload = {
 let res;
 try {
   console.log("TOKEN:", jwtToken ? "YES" : "NO");
+console.log("HEADERS:", getHeaders());
 console.log("PAYLOAD:", JSON.stringify(payload));
   console.log("CANDLE PAYLOAD:", payload);
  res = await axios.post(
