@@ -292,10 +292,17 @@ console.log("PAYLOAD:", JSON.stringify(payload));
     payload,
     { headers: getHeaders() }
   );
- } catch (err) {
+} catch (err) {
   console.log("STATUS:", err.response?.status);
-console.log("DATA:", JSON.stringify(err.response?.data)); 
-throw err;
+
+  console.log(
+    "DATA:",
+    JSON.stringify(err.response?.data || err.message, null, 2)
+  );
+
+  console.log("FULL ERROR:", err.toString());
+
+  throw err;
 }
   if (!res.data?.status) {
     throw new Error(res.data?.message || "Candle data failed");
