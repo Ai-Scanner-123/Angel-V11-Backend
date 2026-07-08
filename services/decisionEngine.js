@@ -23,32 +23,26 @@ function buildDecision(input = {}) {
   const rsi = num(input.rsi, 50);
   const macd = num(input.macd, 0);
   const signal = num(input.macdSignal || input.signal, 0);
-  const histogram = num(input.histogram || input.macdHistogram, macd - signal);
+  const histogram = num(input.histogram, macd - signal);
   const ema9 = num(input.ema9, price);
   const ema20 = num(input.ema20, price);
   const marketTrend = String(input.marketTrend || "neutral").toLowerCase();
 
   const range = Math.max(high - low, price * 0.006);
   const rvol = avgVolume > 0 ? volume / avgVolume : 1;
-  const dayPos = range > 0 ? ((price - low) / range) * 100 : 50;
 
   let score = 50;
   const reasons = [];
   const warnings = [];
 
-  // ===== VWAP Logic =====
-  const vwapBullish = price > vwap;
-  const vwapBearish = price < vwap;
-
-  if (vwapBullish) {
+  if (price > vwap) {
     score += 10;
     reasons.push("Price VWAP ke upar hai");
-  } else if (vwapBearish) {
+  } else {
     score -= 10;
     warnings.push("Price VWAP ke neeche hai");
   }
 
-  // ===== EMA Trend Logic =====
   const emaBullish = price > ema9 && ema9 > ema20;
   const emaBearish = price < ema9 && ema9 < ema20;
 
@@ -62,158 +56,109 @@ function buildDecision(input = {}) {
     warnings.push("EMA trend clear nahi hai");
   }
 
-  // ===== RSI Logic =====
-  const rsiBullish = rsi > 55;
-  const rsiBearish = rsi < 45;
-
-  if (rsi >= 55 && rsi <= 65) {
+ // ===== RSI Logic V11.3 =====
+if (rsi >= 50 && rsi <= 62) {
     score += 14;
-    reasons.push("RSI bullish momentum zone me hai");
-  } else if (rsi >= 35 && rsi <= 45) {
+    reasons.push("RSI bullish zone me hai");
+}
+else if (rsi >= 38 && rsi <= 48) {
     score -= 14;
-    warnings.push("RSI bearish momentum zone me hai");
-  } else if (rsi > 65 && rsi <= 72) {
+    warnings.push("RSI bearish zone me hai");
+}
+else if (rsi > 62 && rsi <= 70) {
     score += 5;
-    warnings.push("RSI high hai - fresh entry me confirmation zaruri");
-  } else if (rsi >= 28 && rsi < 35) {
+    warnings.push("RSI high hai - confirmation ka wait kare");
+}
+else if (rsi >= 30 && rsi < 38) {
     score -= 5;
-    warnings.push("RSI low hai - fresh sell me confirmation zaruri");
-  } else if (rsi > 72) {
+    warnings.push("RSI low hai - confirmation ka wait kare");
+}
+else if (rsi > 70) {
     score -= 20;
     warnings.push("RSI overbought hai - fresh buy avoid kare");
-  } else if (rsi < 28) {
-    score += 4;
-    warnings.push("RSI oversold hai - fresh sell avoid kare, bounce aa sakta hai");
-  } else {
-    warnings.push("RSI neutral zone me hai");
-  }
+}
+else if (rsi < 30) {
+    score -= 20;
+    warnings.push("RSI oversold hai - fresh sell avoid kare");
+}
+else {
+    warnings.push("RSI neutral hai");
+}
 
-  // ===== MACD 12,26,9 Intraday Logic =====
-  const macdBullish = macd > signal;
-  const macdBearish = macd < signal;
-  const histBullish = histogram > 0;
-  const histBearish = histogram < 0;
-  const macdGap = Math.abs(macd - signal);
-  const flatMacd = macdGap < Math.max(price * 0.00015, 0.03);
+  const macdBullish = macd > signal && histogram > 0;
+  const macdBearish = macd < signal && histogram < 0;
 
-  if (macdBullish && histBullish && !flatMacd) {
+  if (macdBullish) {
     score += 18;
-    reasons.push("MACD bullish confirmation: MACD > Signal aur Histogram positive");
-  } else if (macdBearish && histBearish && !flatMacd) {
+    reasons.push("MACD bullish hai: MACD > Signal aur Histogram positive");
+  } else if (macdBearish) {
     score -= 18;
-    warnings.push("MACD bearish confirmation: MACD < Signal aur Histogram negative");
-  } else if (flatMacd) {
-    warnings.push("MACD aur Signal bahut paas hain - wait better");
+    warnings.push("MACD bearish hai: MACD < Signal aur Histogram negative");
   } else {
-    warnings.push("MACD confirmation clear nahi hai");
+    warnings.push("MACD flat/unclear hai");
   }
 
-  // Fake signal filter: EMA aur MACD opposite ho to confidence reduce.
-  if (emaBullish && (macdBearish || histBearish)) {
-    score -= 15;
-    warnings.push("EMA bullish hai lekin MACD support nahi kar raha - BUY avoid/confirm kare");
+  if (emaBullish && !macdBullish) {
+    score -= 8;
+    warnings.push("EMA bullish hai lekin MACD confirmation nahi hai");
   }
 
-  if (emaBearish && (macdBullish || histBullish)) {
-    score += 15;
-    warnings.push("EMA bearish hai lekin MACD support nahi kar raha - SELL avoid/confirm kare");
+  if (emaBearish && !macdBearish) {
+    score += 8;
+    warnings.push("EMA bearish hai lekin MACD confirmation weak hai");
   }
 
-  // ===== Relative Volume Logic =====
-  const volumeStrong = rvol >= 1.5;
-  const volumeLow = rvol < 0.8;
-
-  if (volumeStrong) {
+  if (rvol >= 1.5) {
     score += 12;
     reasons.push("Relative volume strong hai");
-  } else if (volumeLow) {
+  } else if (rvol < 0.8) {
     score -= 12;
-    warnings.push("Volume low hai - fake move ka risk");
-  } else {
-    reasons.push("Volume normal hai");
+    warnings.push("Volume low hai");
   }
 
-  // ===== Intraday Open Position =====
   if (price > open) {
     score += 6;
     reasons.push("Stock intraday positive hai");
-  } else if (price < open) {
+  } else {
     score -= 6;
     warnings.push("Stock intraday negative hai");
   }
 
-  // ===== Market Trend Logic =====
   if (marketTrend === "bullish") {
     score += 8;
     reasons.push("Market trend bullish hai");
   } else if (marketTrend === "bearish") {
     score -= 8;
     warnings.push("Market trend bearish hai");
-  } else {
-    warnings.push("Market trend neutral/sideways hai");
   }
 
-  // ===== Extreme Range Filter =====
-  if (dayPos >= 85) {
-    score -= 6;
-    warnings.push("Price day high ke bahut paas hai - chase na kare");
-  }
-
-  if (dayPos <= 15) {
-    score += 6;
-    warnings.push("Price day low ke bahut paas hai - fresh sell me caution");
-  }
-
-  score = clamp(Math.round(score), 0, 100);
-
-  // ===== Professional Intraday Decision =====
-  const strongBuySetup =
-    emaBullish &&
-    vwapBullish &&
-    rsiBullish &&
-    macdBullish &&
-    histBullish &&
-    volumeStrong;
-
-  const strongSellSetup =
-    emaBearish &&
-    vwapBearish &&
-    rsiBearish &&
-    macdBearish &&
-    histBearish &&
-    !volumeLow;
+  score = clamp(score, 0, 100);
 
   let decision = "WAIT";
-  if (score >= 82 && strongBuySetup) decision = "STRONG BUY";
-  else if (score >= 65 && emaBullish && macdBullish && histBullish && rsi >= 50) decision = "BUY";
-  else if (score <= 28 && strongSellSetup) decision = "STRONG SELL";
-  else if (score <= 42 && emaBearish && macdBearish && histBearish && rsi <= 50) decision = "SELL";
+  if (score >= 80 && emaBullish && rsi > 55 && macdBullish) decision = "STRONG BUY";
+  else if (score >= 65 && emaBullish && rsi >= 50 && macd >= signal) decision = "BUY";
+  else if (score <= 30 && emaBearish && rsi < 45 && macdBearish) decision = "STRONG SELL";
+  else if (score <= 40 && emaBearish && rsi <= 50 && macd <= signal) decision = "SELL";
 
-  const risk =
-    decision === "STRONG BUY" || decision === "STRONG SELL"
-      ? "LOW"
-      : decision === "BUY" || decision === "SELL"
-      ? "MEDIUM"
-      : "HIGH";
-
-  const isSell = decision === "SELL" || decision === "STRONG SELL";
-  const isBuy = decision === "BUY" || decision === "STRONG BUY";
+  const risk = score >= 80 ? "LOW" : score >= 60 ? "MEDIUM" : "HIGH";
 
   const slGap = Math.max(range * 0.6, price * 0.004);
-  const entryLow = isBuy ? price - price * 0.002 : price;
-  const entryHigh = isBuy ? price + price * 0.001 : price;
+  const entryLow = decision === "BUY" ? price - price * 0.002 : price;
+  const entryHigh = decision === "BUY" ? price + price * 0.001 : price;
 
-  const stopLoss = isSell ? price + slGap : price - slGap;
-  const target1 = isSell ? price - slGap * 1.5 : price + slGap * 1.5;
-  const target2 = isSell ? price - slGap * 2.2 : price + slGap * 2.2;
-  const target3 = isSell ? price - slGap * 3 : price + slGap * 3;
+  const stopLoss =
+    decision === "BUY"
+      ? price - slGap
+      : decision === "SELL"
+      ? price + slGap
+      : price - slGap;
 
-  const macdStatus =
-    macdBullish && histBullish
-      ? "Bullish Momentum"
-      : macdBearish && histBearish
-      ? "Bearish Momentum"
-      : "Neutral / Weak";
+  const target1 =
+    decision === "SELL" ? price - slGap * 1.5 : price + slGap * 1.5;
+  const target2 =
+    decision === "SELL" ? price - slGap * 2.2 : price + slGap * 2.2;
+  const target3 =
+    decision === "SELL" ? price - slGap * 3 : price + slGap * 3;
 
   return {
     symbol,
@@ -225,9 +170,9 @@ function buildDecision(input = {}) {
     ema9: round(ema9),
     ema20: round(ema20),
     macd: round(macd),
+    macdSignal: round(signal),
     signal: round(signal),
     histogram: round(histogram),
-    macdStatus,
     entryZone: {
       low: round(entryLow),
       high: round(entryHigh)
@@ -239,33 +184,14 @@ function buildDecision(input = {}) {
       t3: round(target3)
     },
     rvol: round(rvol, 2),
-    dayPosition: round(dayPos, 1),
-    confirmations: {
-      emaBullish,
-      emaBearish,
-      rsiBullish,
-      rsiBearish,
-      macdBullish,
-      macdBearish,
-      histBullish,
-      histBearish,
-      vwapBullish,
-      vwapBearish,
-      volumeStrong,
-      volumeLow
-    },
     reasons,
     warnings,
     finalMessage:
-      decision === "STRONG BUY"
-        ? "Strong BUY setup hai. Entry, SL aur risk limit strictly follow kare."
-        : decision === "BUY"
-        ? "BUY possible hai, lekin confirmation aur stop loss follow kare."
-        : decision === "STRONG SELL"
-        ? "Strong SELL setup hai. Breakdown confirmation aur risk control zaruri hai."
+      decision === "BUY"
+        ? "BUY possible hai, lekin entry zone aur stop loss follow kare."
         : decision === "SELL"
         ? "SELL pressure hai, risk control ke saath trade kare."
-        : "WAIT kare. EMA + RSI + MACD confirmation strong nahi hai."
+        : "WAIT kare. Trade quality strong nahi hai."
   };
 }
 

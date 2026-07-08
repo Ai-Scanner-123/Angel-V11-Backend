@@ -7,13 +7,12 @@ let instrumentLoadedAt = null;
 
 const quoteCache = new Map();
 const candleCache = new Map();
-const candleInflight = new Map();
-const candleCooldown = new Map();
+const candleLastGoodCache = new Map();
+const candlePendingRequests = new Map();
+const candleRateLimitUntil = new Map();
 
 const QUOTE_CACHE_MS = 5000;
-const CANDLE_CACHE_MS = 300000; // 5 minutes - Angel Candle API rate limit protection
-const CANDLE_STALE_CACHE_MS = 30 * 60 * 1000; // 30 minutes fallback if Angel returns 403
-const CANDLE_RATE_LIMIT_COOLDOWN_MS = 3 * 60 * 1000; // 3 minutes cooldown after 403
+const CANDLE_CACHE_MS = 300000; // 5 minutes cache to reduce Angel API rate limit
 const INSTRUMENT_CACHE_MS = 24 * 60 * 60 * 1000;
 
 const BASE_URL = process.env.ANGEL_BASE_URL || "https://apiconnect.angelone.in";
@@ -200,7 +199,7 @@ function buildCandleRange() {
     toMinute = 30;
   }
 
-  // Use previous trading day as start so RSI/MACD has enough 5-minute candles.
+  // Use previous trading day as start so RSI has enough 5-minute candles even soon after market opens.
   return {
     fromdate: `${prev} 09:15`,
     todate: `${toDate} ${pad(toHour)}:${pad(toMinute)}`
@@ -238,67 +237,59 @@ function calcEMA(closes, period) {
   return Number(ema.toFixed(2));
 }
 
-function calcEMASeries(values, period) {
-  const nums = (values || []).map(Number).filter(Number.isFinite);
-  if (nums.length < period) return [];
+
+function calcEMAFull(values, period) {
+  const cleanValues = (values || []).map(Number).filter(Number.isFinite);
+  if (cleanValues.length < period) return [];
 
   const multiplier = 2 / (period + 1);
-  const series = new Array(nums.length).fill(null);
-  let ema = nums.slice(0, period).reduce((sum, val) => sum + val, 0) / period;
-  series[period - 1] = ema;
+  const result = new Array(cleanValues.length).fill(null);
+  let ema = cleanValues.slice(0, period).reduce((sum, val) => sum + val, 0) / period;
+  result[period - 1] = ema;
 
-  for (let i = period; i < nums.length; i++) {
-    ema = (nums[i] - ema) * multiplier + ema;
-    series[i] = ema;
+  for (let i = period; i < cleanValues.length; i++) {
+    ema = (cleanValues[i] - ema) * multiplier + ema;
+    result[i] = ema;
   }
 
-  return series;
+  return result;
 }
 
 function calcMACD(closes, fastPeriod = 12, slowPeriod = 26, signalPeriod = 9) {
   const cleanCloses = (closes || []).map(Number).filter(Number.isFinite);
   if (cleanCloses.length < slowPeriod + signalPeriod) {
-    return {
-      macd: null,
-      signal: null,
-      histogram: null,
-      macdStatus: "UNAVAILABLE"
-    };
+    return { macd: null, signal: null, histogram: null, status: "UNAVAILABLE" };
   }
 
-  const emaFast = calcEMASeries(cleanCloses, fastPeriod);
-  const emaSlow = calcEMASeries(cleanCloses, slowPeriod);
+  const fastEMA = calcEMAFull(cleanCloses, fastPeriod);
+  const slowEMA = calcEMAFull(cleanCloses, slowPeriod);
 
-  const macdLine = [];
+  const macdSeries = [];
   for (let i = 0; i < cleanCloses.length; i++) {
-    if (Number.isFinite(emaFast[i]) && Number.isFinite(emaSlow[i])) {
-      macdLine.push(emaFast[i] - emaSlow[i]);
+    if (fastEMA[i] !== null && slowEMA[i] !== null) {
+      macdSeries.push(fastEMA[i] - slowEMA[i]);
     }
   }
 
-  if (macdLine.length < signalPeriod) {
-    return {
-      macd: null,
-      signal: null,
-      histogram: null,
-      macdStatus: "UNAVAILABLE"
-    };
+  if (macdSeries.length < signalPeriod) {
+    return { macd: null, signal: null, histogram: null, status: "UNAVAILABLE" };
   }
 
-  const signalSeries = calcEMASeries(macdLine, signalPeriod).filter(Number.isFinite);
-  const macdValue = macdLine[macdLine.length - 1];
-  const signalValue = signalSeries[signalSeries.length - 1];
-  const histogram = macdValue - signalValue;
+  const signalSeries = calcEMAFull(macdSeries, signalPeriod).filter(v => v !== null);
+  const macd = macdSeries[macdSeries.length - 1];
+  const signal = signalSeries[signalSeries.length - 1];
+  const histogram = macd - signal;
 
-  let macdStatus = "NEUTRAL";
-  if (macdValue > signalValue && histogram > 0) macdStatus = "BULLISH_MOMENTUM";
-  else if (macdValue < signalValue && histogram < 0) macdStatus = "BEARISH_MOMENTUM";
+  let status = "NEUTRAL";
+  if (macd > signal && histogram > 0) status = "BULLISH MOMENTUM";
+  else if (macd < signal && histogram < 0) status = "BEARISH MOMENTUM";
+  else if (Math.abs(histogram) <= 0.05) status = "FLAT / WAIT";
 
   return {
-    macd: Number(macdValue.toFixed(2)),
-    signal: Number(signalValue.toFixed(2)),
+    macd: Number(macd.toFixed(2)),
+    signal: Number(signal.toFixed(2)),
     histogram: Number(histogram.toFixed(2)),
-    macdStatus
+    status
   };
 }
 
@@ -330,22 +321,6 @@ function calcRSI(closes, period = 14) {
   return Number((100 - 100 / (1 + rs)).toFixed(2));
 }
 
-function getFreshOrStaleCandleCache(cacheKey) {
-  const cached = candleCache.get(cacheKey);
-  if (!cached) return null;
-
-  const age = Date.now() - cached.time;
-  if (age < CANDLE_STALE_CACHE_MS) {
-    return {
-      ...cached.data,
-      cacheStatus: age < CANDLE_CACHE_MS ? "FRESH_CACHE" : "STALE_CACHE_FALLBACK",
-      cacheAgeMs: age
-    };
-  }
-
-  return null;
-}
-
 async function getCandles(body = {}) {
   await ensureLogin();
 
@@ -354,112 +329,78 @@ async function getCandles(body = {}) {
   const interval = body.interval || "FIVE_MINUTE";
   const range = buildCandleRange();
 
-  // Important: do NOT include minute-wise todate in cache key.
-  // Otherwise every button click/minute creates a new candle API request and hits Angel rate limit.
+  // Cache key intentionally avoids minute-by-minute todate so repeated Fetch Live Data
+  // does not hit Angel candle API repeatedly and cause 403 rate-limit.
   const cacheKey = `${found.symbol}:${interval}`;
   const cached = candleCache.get(cacheKey);
-  if (cached && Date.now() - cached.time < CANDLE_CACHE_MS) {
-    return { ...cached.data, cacheStatus: "FRESH_CACHE", cacheAgeMs: Date.now() - cached.time };
+  if (cached && Date.now() - cached.time < CANDLE_CACHE_MS) return cached.data;
+
+  const cooldownUntil = candleRateLimitUntil.get(cacheKey) || 0;
+  const lastGood = candleLastGoodCache.get(cacheKey);
+  if (Date.now() < cooldownUntil && lastGood) {
+    return { ...lastGood, rateLimitFallback: true, message: "Using cached candles due to Angel API rate limit" };
   }
 
-  const cooldownUntil = candleCooldown.get(cacheKey) || 0;
-  if (Date.now() < cooldownUntil) {
-    const fallback = getFreshOrStaleCandleCache(cacheKey);
-    if (fallback) {
-      return {
-        ...fallback,
-        cacheStatus: "RATE_LIMIT_COOLDOWN_CACHE",
-        cooldownRemainingMs: cooldownUntil - Date.now()
-      };
-    }
-  }
-
-  if (candleInflight.has(cacheKey)) {
-    return candleInflight.get(cacheKey);
-  }
+  const pending = candlePendingRequests.get(cacheKey);
+  if (pending) return pending;
 
   const requestPromise = (async () => {
-    const payloadVariants = [
-      { exchange: "NSE", symboltoken: found.token, interval, ...range },
-      {
-        exchange: "NSE",
-        symboltoken: found.token,
+    // Use one stable payload first. Repeated fallback attempts can trigger Angel rate-limit.
+    const payload = { exchange: "NSE", symboltoken: found.token, interval, ...range };
+
+    try {
+      console.log("CANDLE PAYLOAD:", payload);
+
+      const res = await axios.post(
+        `${BASE_URL}/rest/secure/angelbroking/historical/v1/getCandleData`,
+        payload,
+        { headers: getHeaders(), timeout: 30000 }
+      );
+
+      if (!res.data?.status) {
+        const msg = res.data?.message || res.data?.errorcode || "Candle data failed";
+        console.log("CANDLE API RESPONSE:", JSON.stringify(res.data));
+        throw new Error(msg);
+      }
+
+      const rawCandles = res.data.data || [];
+      const candles = normalizeCandles(rawCandles);
+      const result = {
+        success: true,
+        symbol: found.symbol,
+        tradingSymbol: found.tradingSymbol,
+        token: found.token,
         interval,
-        fromdate: `${range.fromdate}:00`,
-        todate: `${range.todate}:00`
-      },
-      { exchange: "NSE_CM", symboltoken: found.token, interval, ...range }
-    ];
+        fromdate: payload.fromdate,
+        todate: payload.todate,
+        candles,
+        rawCandles
+      };
 
-    let lastError;
+      candleCache.set(cacheKey, { time: Date.now(), data: result });
+      candleLastGoodCache.set(cacheKey, result);
+      return result;
+    } catch (err) {
+      const msg = axiosMessage(err, "Candle data failed");
+      console.log("CANDLE ERROR:", err.response?.status || "NO_STATUS", JSON.stringify(msg));
 
-    for (const payload of payloadVariants) {
-      try {
-        console.log("CANDLE PAYLOAD:", payload);
-
-        const res = await axios.post(
-          `${BASE_URL}/rest/secure/angelbroking/historical/v1/getCandleData`,
-          payload,
-          { headers: getHeaders(), timeout: 30000 }
-        );
-
-        if (!res.data?.status) {
-          lastError = new Error(res.data?.message || res.data?.errorcode || "Candle data failed");
-          console.log("CANDLE API RESPONSE:", JSON.stringify(res.data));
-          continue;
-        }
-
-        const rawCandles = res.data.data || [];
-        const candles = normalizeCandles(rawCandles);
-        const result = {
-          success: true,
-          symbol: found.symbol,
-          tradingSymbol: found.tradingSymbol,
-          token: found.token,
-          interval,
-          fromdate: payload.fromdate,
-          todate: payload.todate,
-          candles,
-          rawCandles,
-          cacheStatus: "LIVE_API"
-        };
-
-        candleCache.set(cacheKey, { time: Date.now(), data: result });
-        candleCooldown.delete(cacheKey);
-        return result;
-      } catch (err) {
-        lastError = err;
-        const msg = axiosMessage(err, "Candle data failed");
-        console.log("CANDLE ERROR:", err.response?.status || "NO_STATUS", JSON.stringify(msg));
-
-        if (err.response?.status === 403) {
-          candleCooldown.set(cacheKey, Date.now() + CANDLE_RATE_LIMIT_COOLDOWN_MS);
-
-          const fallback = getFreshOrStaleCandleCache(cacheKey);
-          if (fallback) {
-            return {
-              ...fallback,
-              cacheStatus: "RATE_LIMIT_CACHE_FALLBACK",
-              rateLimitMessage: "Angel Candle API rate limit. Using cached candle data."
-            };
-          }
-
-          break;
+      if (err.response?.status === 403 || String(msg).toLowerCase().includes("access rate")) {
+        candleRateLimitUntil.set(cacheKey, Date.now() + CANDLE_CACHE_MS);
+        if (lastGood) {
+          return { ...lastGood, rateLimitFallback: true, message: "Using cached candles due to Angel API rate limit" };
         }
       }
-    }
 
-    throw new Error(typeof lastError?.message === "string" ? lastError.message : "Candle data failed");
+      throw new Error(typeof err?.message === "string" ? err.message : "Candle data failed");
+    } finally {
+      candlePendingRequests.delete(cacheKey);
+    }
   })();
 
-  candleInflight.set(cacheKey, requestPromise);
-
-  try {
-    return await requestPromise;
-  } finally {
-    candleInflight.delete(cacheKey);
-  }
+  candlePendingRequests.set(cacheKey, requestPromise);
+  return requestPromise;
 }
+
 
 async function getQuote(body = {}) {
   await ensureLogin();
@@ -503,12 +444,11 @@ async function getQuote(body = {}) {
   let ema9 = null;
   let ema20 = null;
   let macd = null;
-  let signal = null;
+  let macdSignal = null;
   let histogram = null;
   let macdStatus = "UNAVAILABLE";
   let rsiSource = "ANGEL_CANDLES";
   let candleCount = 0;
-  let candleCacheStatus = "UNAVAILABLE";
 
   try {
     const candleResult = await getCandles({ symbol: found.symbol, interval: "FIVE_MINUTE" });
@@ -517,19 +457,18 @@ async function getQuote(body = {}) {
       .filter(Number.isFinite);
 
     candleCount = closes.length;
-    candleCacheStatus = candleResult.cacheStatus || "UNKNOWN";
     liveRsi = calcRSI(closes);
     ema9 = calcEMA(closes, 9);
     ema20 = calcEMA(closes, 20);
 
-    const macdResult = calcMACD(closes, 12, 26, 9);
-    macd = macdResult.macd;
-    signal = macdResult.signal;
-    histogram = macdResult.histogram;
-    macdStatus = macdResult.macdStatus;
+    const macdData = calcMACD(closes);
+    macd = macdData.macd;
+    macdSignal = macdData.signal;
+    histogram = macdData.histogram;
+    macdStatus = macdData.status;
   } catch (err) {
     rsiSource = "UNAVAILABLE";
-    console.log("RSI/MACD Error:", err.message);
+    console.log("RSI Error:", err.message);
   }
 
   const result = {
@@ -549,14 +488,12 @@ async function getQuote(body = {}) {
       ema9,
       ema20,
       macd,
-      signal,
-      macdSignal: signal,
+      macdSignal,
+      signal: macdSignal,
       histogram,
-      macdHistogram: histogram,
       macdStatus,
       rsiSource,
       candleCount,
-      candleCacheStatus,
       raw: item
     }
   };
