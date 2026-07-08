@@ -277,7 +277,7 @@ const todate = `${yyyy}-${mm}-${dd} ${pad(toHour)}:${pad(toMinute)}:00`;
 const payload = {
   exchange: "NSE",
   symboltoken: found.token,
- interval: "FIVE_MINUTE"
+ interval: "FIVE_MINUTE",
   fromdate,
   todate
 };
