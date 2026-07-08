@@ -253,8 +253,16 @@ if (cached && (Date.now() - cached.time < CANDLE_CACHE_MS)) {
 }
 const now = new Date();
 const from = new Date();
+
 from.setHours(9, 15, 0, 0);
-now.setHours(15, 30, 0, 0);
+
+const current = new Date();
+
+if (current.getHours() < 15 || (current.getHours() === 15 && current.getMinutes() < 30)) {
+  now.setHours(current.getHours(), current.getMinutes(), 0, 0);
+} else {
+  now.setHours(15, 25, 0, 0);
+}
  const formatDate = d =>
     d.toISOString().slice(0, 19).replace("T", " ");
 const payload = {
