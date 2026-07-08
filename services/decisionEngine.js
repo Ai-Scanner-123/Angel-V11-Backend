@@ -11,15 +11,20 @@ function round(n, d = 2) {
   return Number(num(n).toFixed(d));
 }
 
+function moneySafe(v) {
+  return round(v, 2);
+}
+
 function buildDecision(input = {}) {
   const symbol = input.symbol || "UNKNOWN";
+
   const price = num(input.price || input.ltp);
   const prev = num(input.previousClose || input.prevClose || input.close, price);
   const open = num(input.open, price);
   const high = num(input.high, price);
   const low = num(input.low, price);
   const volume = num(input.volume);
-  const avgVolume = num(input.avgVolume || input.averageVolume, volume || 1);
+  const avgVolume = num(input.avgVolume || input.averageVolume, 0);
   const vwap = num(input.vwap, price);
   const rsi = num(input.rsi, 50);
   const ema9 = num(input.ema9, price);
@@ -28,146 +33,221 @@ function buildDecision(input = {}) {
   const signal = num(input.macdSignal || input.signal, 0);
   const histogram = num(input.histogram, macd - signal);
   const marketTrend = String(input.marketTrend || input.trend || "neutral").toLowerCase();
-  const volumeStrength = String(input.volumeStrength || input.vol || "normal").toLowerCase();
 
   const range = Math.max(high - low, price * 0.006);
-  const rvol = avgVolume > 0 ? volume / avgVolume : 1;
   const pos = range > 0 ? ((price - low) / range) * 100 : 50;
-  const highRvol = volumeStrength === "high" || rvol >= 1.2;
-  const lowRvol = volumeStrength === "low" || (volume > 0 && rvol < 0.8);
+  const changePct = prev > 0 ? ((price - prev) / prev) * 100 : 0;
+  const rvol = avgVolume > 0 ? volume / avgVolume : (volume > 0 ? 1.3 : 1);
 
-  const buyChecks = [
-    { ok: price > ema9, text: "Price EMA 9 के ऊपर है", type: "direction" },
-    { ok: ema9 > ema20, text: "EMA 9 EMA 20 के ऊपर है", type: "direction" },
-    { ok: rsi > 50, text: "RSI buy side में है", type: "direction" },
-    { ok: macd > signal, text: "MACD Signal line के ऊपर है", type: "direction" },
-    { ok: histogram > 0, text: "Histogram positive है", type: "direction" },
-    { ok: price > prev, text: "Price previous close के ऊपर है", type: "direction" },
-    { ok: highRvol, text: "High RVOL है", type: "quality" },
-    { ok: marketTrend === "bullish", text: "Market bullish है", type: "market" }
-  ];
+  const buyReasons = [];
+  const sellReasons = [];
+  const warnings = [];
 
-  const sellChecks = [
-    { ok: price < ema9, text: "Price EMA 9 के नीचे है", type: "direction" },
-    { ok: ema9 < ema20, text: "EMA 9 EMA 20 के नीचे है", type: "direction" },
-    { ok: rsi < 45, text: "RSI sell side में है", type: "direction" },
-    { ok: macd < signal, text: "MACD Signal line के नीचे है", type: "direction" },
-    { ok: histogram < 0, text: "Histogram negative है", type: "direction" },
-    { ok: price < prev, text: "Price previous close के नीचे है", type: "direction" },
-    { ok: highRvol, text: "High RVOL है", type: "quality" },
-    { ok: marketTrend === "bearish", text: "Market bearish है", type: "market" }
-  ];
+  let buyScore = 0;
+  let sellScore = 0;
 
-  const buyConfirmations = buyChecks.filter(x => x.ok).length;
-  const sellConfirmations = sellChecks.filter(x => x.ok).length;
-  const buyDirectional = buyChecks.filter(x => x.ok && x.type === "direction").length;
-  const sellDirectional = sellChecks.filter(x => x.ok && x.type === "direction").length;
+  function buy(ok, weight, text) {
+    if (ok) {
+      buyScore += weight;
+      buyReasons.push("✔ " + text);
+    }
+  }
 
-  let decision = "WAIT";
+  function sell(ok, weight, text) {
+    if (ok) {
+      sellScore += weight;
+      sellReasons.push("✔ " + text);
+    }
+  }
+
+  // ===== Core trend confirmations =====
+  buy(price > ema9, 14, "Price EMA 9 ke upar hai");
+  sell(price < ema9, 14, "Price EMA 9 ke neeche hai");
+
+  buy(ema9 > ema20, 16, "EMA 9 EMA 20 ke upar hai");
+  sell(ema9 < ema20, 16, "EMA 9 EMA 20 ke neeche hai");
+
+  // RSI: avoid giving both sides credit in neutral zone.
+  buy(rsi >= 55 && rsi <= 72, 14, "RSI bullish zone me hai");
+  sell(rsi <= 45 && rsi >= 28, 14, "RSI bearish zone me hai");
+
+  // MACD and histogram.
+  buy(macd > signal, 14, "MACD Signal line ke upar hai");
+  sell(macd < signal, 14, "MACD Signal line ke neeche hai");
+
+  buy(histogram > 0, 10, "Histogram positive hai");
+  sell(histogram < 0, 10, "Histogram negative hai");
+
+  // Price strength.
+  buy(price > prev, 12, "Price previous close ke upar hai");
+  sell(price < prev, 12, "Price previous close ke neeche hai");
+
+  buy(price > open, 6, "Stock intraday open se upar hai");
+  sell(price < open, 6, "Stock intraday open se neeche hai");
+
+  buy(price > vwap, 8, "Price VWAP ke upar hai");
+  sell(price < vwap, 8, "Price VWAP ke neeche hai");
+
+  // Market trend supports only its direction. Neutral does not add to both sides.
+  buy(marketTrend === "bullish", 8, "Market bullish hai");
+  sell(marketTrend === "bearish", 8, "Market bearish hai");
+
+  // Volume confirms whichever side is already stronger. It is never an against-warning.
+  const highRvol = rvol >= 1.2 || volume === 0;
+  if (highRvol) {
+    if (buyScore > sellScore) {
+      buyScore += 8;
+      buyReasons.push("✔ High RVOL hai");
+    } else if (sellScore > buyScore) {
+      sellScore += 8;
+      sellReasons.push("✔ High RVOL hai");
+    } else {
+      buyScore += 4;
+      sellScore += 4;
+      buyReasons.push("✔ High RVOL hai, lekin direction mixed hai");
+      sellReasons.push("✔ High RVOL hai, lekin direction mixed hai");
+    }
+  } else {
+    warnings.push("⚠ Volume/RVOL weak hai, trade quality reduce hoti hai");
+  }
+
+  // ===== Risk / caution filters =====
+  if (pos >= 80) warnings.push("⚠ Price day high ke paas hai - fresh BUY me chase avoid kare");
+  if (pos <= 20) warnings.push("⚠ Price day low ke paas hai - fresh SELL me confirmation zaroori");
+  if (Math.abs(changePct) >= 3) warnings.push("⚠ Stock me big move already ho chuka hai - chase na kare");
+  if (rsi > 72) warnings.push("⚠ RSI overbought hai - fresh BUY me risk high");
+  if (rsi < 28) warnings.push("⚠ RSI oversold hai - fresh SELL me risk high");
+  if (Math.abs(histogram) < Math.max(price * 0.00005, 0.05)) warnings.push("⚠ MACD histogram chhota hai - momentum weak/flat ho sakta hai");
+
+  // ===== Result / event risk support if frontend/backend provides it later =====
+  const resultDaysLeftRaw = input.resultDaysLeft ?? input.daysToResult ?? input.resultInDays;
+  const resultDaysLeft = Number(resultDaysLeftRaw);
+  const hasResultRisk = Number.isFinite(resultDaysLeft) && resultDaysLeft >= 0 && resultDaysLeft <= 4;
+  if (hasResultRisk) {
+    if (resultDaysLeft === 0) warnings.push("⚠ Aaj result day hai - intraday me NO TRADE better");
+    else warnings.push(`⚠ Result ${resultDaysLeft} din baad hai - extra confirmation zaroori`);
+  }
+
+  const totalPossible = 110;
+  const buyStrength = Math.round(clamp((buyScore / totalPossible) * 100, 0, 100));
+  const sellStrength = Math.round(clamp((sellScore / totalPossible) * 100, 0, 100));
+
+  let decision = "WAIT / CONFIRMATION";
   let side = "wait";
 
-  if (buyConfirmations >= 7 && sellDirectional <= 1) {
+  const buyLead = buyScore - sellScore;
+  const sellLead = sellScore - buyScore;
+
+  if (!hasResultRisk && buyStrength >= 78 && buyLead >= 35) {
     decision = "STRONG BUY";
     side = "buy";
-  } else if (buyConfirmations >= 6 && sellDirectional <= 2) {
+  } else if (!hasResultRisk && buyStrength >= 62 && buyLead >= 22) {
     decision = "BUY";
     side = "buy";
-  } else if (sellConfirmations >= 7 && buyDirectional <= 1) {
+  } else if (!hasResultRisk && sellStrength >= 78 && sellLead >= 35) {
     decision = "STRONG SELL";
     side = "sell";
-  } else if (sellConfirmations >= 6 && buyDirectional <= 2) {
+  } else if (!hasResultRisk && sellStrength >= 62 && sellLead >= 22) {
     decision = "SELL";
     side = "sell";
   }
 
-  const reasons = [];
-  const warnings = [];
-
-  if (side === "buy") {
-    buyChecks.filter(x => x.ok).forEach(x => reasons.push("✔ " + x.text));
-    sellChecks
-      .filter(x => x.ok && x.type === "direction")
-      .slice(0, 3)
-      .forEach(x => warnings.push("⚠ Buy के against: " + x.text));
-  } else if (side === "sell") {
-    sellChecks.filter(x => x.ok).forEach(x => reasons.push("✔ " + x.text));
-    buyChecks
-      .filter(x => x.ok && x.type === "direction")
-      .slice(0, 3)
-      .forEach(x => warnings.push("⚠ Sell के against: " + x.text));
-  } else {
-    if (buyConfirmations > sellConfirmations) {
-      reasons.push(`➜ Buy confirmations ${buyConfirmations}/8 हैं, लेकिन full alignment नहीं है`);
-    } else if (sellConfirmations > buyConfirmations) {
-      reasons.push(`➜ Sell confirmations ${sellConfirmations}/8 हैं, लेकिन full alignment नहीं है`);
-    } else {
-      reasons.push("➜ Buy/Sell confirmations बराबर हैं");
-    }
-    warnings.push("⚠ Full alignment नहीं है, इसलिए WAIT बेहतर है");
+  // Extra safety: too many warnings downgrade weak BUY/SELL only.
+  if ((decision === "BUY" || decision === "SELL") && warnings.length >= 3) {
+    decision = "WAIT / CONFIRMATION";
+    side = "wait";
+    warnings.push("⚠ Warnings zyada hain, isliye signal WAIT me downgrade hua");
   }
 
-  if (pos >= 80) warnings.push("⚠ Price day high के पास है - chase avoid करें");
-  if (pos <= 20) warnings.push("⚠ Price day low के पास है - fresh entry में confirmation जरूरी");
-  if (rsi > 70) warnings.push("⚠ RSI overbought है");
-  if (rsi < 30) warnings.push("⚠ RSI oversold है");
-  if (lowRvol) warnings.push("⚠ Low RVOL: trade avoid बेहतर");
-  if (marketTrend === "sideways") warnings.push("⚠ Sideways market: wait बेहतर");
+  // Result day strict rule.
+  if (Number.isFinite(resultDaysLeft) && resultDaysLeft === 0) {
+    decision = "WAIT / CONFIRMATION";
+    side = "wait";
+  }
 
   let confidence;
-  if (decision === "STRONG BUY") confidence = 88 + Math.min(7, buyConfirmations - 7);
-  else if (decision === "BUY") confidence = 72 + Math.min(8, buyConfirmations - 6);
-  else if (decision === "STRONG SELL") confidence = 88 + Math.min(7, sellConfirmations - 7);
-  else if (decision === "SELL") confidence = 72 + Math.min(8, sellConfirmations - 6);
-  else confidence = 45 + Math.min(15, Math.max(buyConfirmations, sellConfirmations) * 2);
+  if (side === "buy") confidence = buyStrength;
+  else if (side === "sell") confidence = sellStrength;
+  else confidence = Math.round(45 + Math.min(18, Math.abs(buyStrength - sellStrength) / 2));
 
-  if (warnings.length >= 4 && decision !== "WAIT") {
-    confidence -= 8;
-    if (decision === "BUY" || decision === "SELL") {
-      decision = "WAIT";
-      side = "wait";
-      warnings.push("⚠ Warnings ज्यादा हैं, इसलिए signal WAIT में downgrade हुआ");
-    }
-  }
-
+  if (warnings.length >= 2 && side !== "wait") confidence -= 5;
+  if (warnings.length >= 4 && side !== "wait") confidence -= 8;
   confidence = clamp(Math.round(confidence), 0, 95);
+
+  const grade = confidence >= 88 ? "A+" :
+                confidence >= 80 ? "A" :
+                confidence >= 70 ? "B+" :
+                confidence >= 60 ? "B" :
+                confidence >= 50 ? "C" : "AVOID";
+
   const risk = confidence >= 85 ? "LOW" : confidence >= 70 ? "MEDIUM" : "HIGH";
 
+  // If waiting, still show nearest practical level using dominant side, but no trade should be allowed.
+  const tradeSide = side === "sell" ? "sell" : "buy";
+  const isSell = tradeSide === "sell";
   const slGap = Math.max(range * 0.45, price * 0.004);
-  const isSell = side === "sell";
-  const entryLow = side === "buy" ? price - price * 0.0015 : price;
-  const entryHigh = side === "buy" ? price + price * 0.001 : price;
+
+  const entryLow = tradeSide === "buy" ? price - price * 0.0015 : price;
+  const entryHigh = tradeSide === "buy" ? price + price * 0.001 : price;
   const stopLoss = isSell ? price + slGap : price - slGap;
   const target1 = isSell ? price - slGap * 1.5 : price + slGap * 1.5;
   const target2 = isSell ? price - slGap * 2.2 : price + slGap * 2.2;
   const target3 = isSell ? price - slGap * 3 : price + slGap * 3;
+
+  const reasons = side === "sell" ? sellReasons : side === "buy" ? buyReasons : [];
+  if (side === "wait") {
+    if (buyStrength > sellStrength) reasons.push(`➜ Bullish strength ${buyStrength}% hai, lekin full alignment nahi hai`);
+    else if (sellStrength > buyStrength) reasons.push(`➜ Bearish strength ${sellStrength}% hai, lekin full alignment nahi hai`);
+    else reasons.push("➜ Bullish aur Bearish strength mixed hai");
+  }
+
+  // Only opposite-side reasons become against warnings. High RVOL is excluded permanently.
+  const oppositeReasons = side === "buy" ? sellReasons : side === "sell" ? buyReasons : [];
+  oppositeReasons
+    .filter(t => !String(t).toLowerCase().includes("rvol"))
+    .slice(0, 4)
+    .forEach(t => warnings.push("⚠ Against signal: " + t.replace(/^✔\s*/, "")));
+
+  const buyConfirmations = Math.round(buyStrength / 12.5); // display only
+  const sellConfirmations = Math.round(sellStrength / 12.5); // display only
 
   return {
     symbol,
     decision,
     confidence,
     tradeScore: confidence,
+    grade,
     risk,
+    side,
     price: round(price),
+    previousClose: round(prev),
+    open: round(open),
+    high: round(high),
+    low: round(low),
+    changePct: round(changePct, 2),
+    dayPosition: round(pos, 1),
     ema9: round(ema9),
     ema20: round(ema20),
     rsi: round(rsi),
     macd: round(macd),
     signal: round(signal),
     histogram: round(histogram),
-    buyConfirmations,
-    sellConfirmations,
-    entryZone: { low: round(entryLow), high: round(entryHigh) },
-    stopLoss: round(stopLoss),
-    targets: { t1: round(target1), t2: round(target2), t3: round(target3) },
+    buyConfirmations: clamp(buyConfirmations, 0, 8),
+    sellConfirmations: clamp(sellConfirmations, 0, 8),
+    buyStrength,
+    sellStrength,
+    entryZone: { low: moneySafe(entryLow), high: moneySafe(entryHigh) },
+    stopLoss: moneySafe(stopLoss),
+    targets: { t1: moneySafe(target1), t2: moneySafe(target2), t3: moneySafe(target3) },
     rvol: round(rvol, 2),
     reasons,
-    warnings,
+    warnings: [...new Set(warnings)],
     finalMessage:
       decision.includes("BUY")
-        ? "BUY setup है, लेकिन entry, stop loss और risk strictly follow करें."
+        ? "BUY setup hai, lekin entry, stop loss aur risk strictly follow kare."
         : decision.includes("SELL")
-        ? "SELL setup है, risk control के साथ trade करें."
-        : "WAIT करें. Trade quality अभी strong नहीं है."
+        ? "SELL setup hai, risk control ke saath trade kare."
+        : "WAIT kare. Trade quality abhi strong nahi hai."
   };
 }
 
