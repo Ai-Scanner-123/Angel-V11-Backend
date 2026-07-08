@@ -263,8 +263,11 @@ if (current.getHours() < 15 || (current.getHours() === 15 && current.getMinutes(
 } else {
   now.setHours(15, 25, 0, 0);
 }
- const formatDate = d =>
-    d.toISOString().slice(0, 19).replace("T", " ");
+const formatDate = (d) => {
+  const pad = (n) => String(n).padStart(2, "0");
+
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:00`;
+};
 const payload = {
   exchange: "NSE",
   symboltoken: found.token,
