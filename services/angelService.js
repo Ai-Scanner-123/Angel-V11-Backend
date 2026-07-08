@@ -277,7 +277,7 @@ const todate = `${yyyy}-${mm}-${dd} ${pad(toHour)}:${pad(toMinute)}:00`;
 const payload = {
   exchange: "NSE",
   symboltoken: found.token,
-  interval: "FIVE_MINUTE",
+ interval: "FIVE_MINUTE"
   fromdate,
   todate
 };
@@ -285,14 +285,13 @@ let res;
 try {
   console.log("CANDLE PAYLOAD:", payload);
  res = await axios.post(
-    `${BASE_URL}/rest/secure/angelbroking/historical/v1/getCandleData`,
+    `${BASE_URL}/rest/secure/angelbroking/historical/v1/getCandleData
     payload,
     { headers: getHeaders() }
   );
  } catch (err) {
   console.log("STATUS:", err.response?.status);
-  console.log("DATA:", err.response?.data);
-  throw err;
+console.log("DATA:", JSON.stringify(err.response?.data));  throw err;
 }
   if (!res.data?.status) {
     throw new Error(res.data?.message || "Candle data failed");
