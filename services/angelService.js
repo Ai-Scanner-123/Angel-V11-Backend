@@ -9,7 +9,7 @@ const quoteCache = new Map();
 const candleCache = new Map();
 
 const QUOTE_CACHE_MS = 5000;
-const CANDLE_CACHE_MS = 180000;
+const CANDLE_CACHE_MS = 300000; // 5 minutes
 const INSTRUMENT_CACHE_MS = 24 * 60 * 60 * 1000;
 
 const BASE_URL = process.env.ANGEL_BASE_URL || "https://apiconnect.angelone.in";
