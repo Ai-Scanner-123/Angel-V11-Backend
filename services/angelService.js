@@ -11,7 +11,7 @@ const quoteCache = {};
 const CANDLE_CACHE_MS = 60000;
 const QUOTE_CACHE_MS = 5000;
 
-const BASE_URL = "https://apiconnect.angelbroking.com";
+const BASE_URL = "https://apiconnect.angelone.in";
 const SCRIP_MASTER_URL =
   "https://margincalculator.angelbroking.com/OpenAPI_File/files/OpenAPIScripMaster.json";
 
