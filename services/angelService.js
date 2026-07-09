@@ -321,6 +321,38 @@ function calcRSI(closes, period = 14) {
   return Number((100 - 100 / (1 + rs)).toFixed(2));
 }
 
+function calcATR(candles, period = 14) {
+  if (!Array.isArray(candles) || candles.length < period + 1) return null;
+
+  const trueRanges = [];
+
+  for (let i = 1; i < candles.length; i++) {
+    const high = Number(candles[i].high);
+    const low = Number(candles[i].low);
+    const prevClose = Number(candles[i - 1].close);
+
+    if (!Number.isFinite(high) || !Number.isFinite(low) || !Number.isFinite(prevClose)) continue;
+
+    const tr = Math.max(
+      high - low,
+      Math.abs(high - prevClose),
+      Math.abs(low - prevClose)
+    );
+
+    trueRanges.push(tr);
+  }
+
+  if (trueRanges.length < period) return null;
+
+  let atr = trueRanges.slice(0, period).reduce((sum, val) => sum + val, 0) / period;
+
+  for (let i = period; i < trueRanges.length; i++) {
+    atr = ((atr * (period - 1)) + trueRanges[i]) / period;
+  }
+
+  return Number(atr.toFixed(2));
+}
+
 async function getCandles(body = {}) {
   await ensureLogin();
 
@@ -447,6 +479,7 @@ async function getQuote(body = {}) {
   let macdSignal = null;
   let histogram = null;
   let macdStatus = "UNAVAILABLE";
+  let liveAtr = null;
   let rsiSource = "ANGEL_CANDLES";
   let candleCount = 0;
 
@@ -460,6 +493,7 @@ async function getQuote(body = {}) {
     liveRsi = calcRSI(closes);
     ema9 = calcEMA(closes, 9);
     ema20 = calcEMA(closes, 20);
+    liveAtr = calcATR(candleResult.candles);
 
     const macdData = calcMACD(closes);
     macd = macdData.macd;
@@ -484,6 +518,7 @@ async function getQuote(body = {}) {
       low: item.low,
       open: item.open,
       volume: item.tradeVolume,
+      atr: liveAtr,
       rsi: liveRsi,
       ema9,
       ema20,
@@ -509,5 +544,6 @@ module.exports = {
   findNseToken,
   calcRSI,
   calcEMA,
-  calcMACD
+  calcMACD,
+  calcATR
 };

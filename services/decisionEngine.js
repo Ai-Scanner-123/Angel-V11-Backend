@@ -32,6 +32,7 @@ function buildDecision(input = {}) {
   const macd = num(input.macd, 0);
   const signal = num(input.macdSignal || input.signal, 0);
   const histogram = num(input.histogram, macd - signal);
+  const atr = num(input.atr, 0);
   const marketTrend = String(input.marketTrend || input.trend || "neutral").toLowerCase();
 
   const range = Math.max(high - low, price * 0.006);
@@ -232,6 +233,7 @@ function buildDecision(input = {}) {
     macd: round(macd),
     signal: round(signal),
     histogram: round(histogram),
+    atr: round(atr),
     buyConfirmations: clamp(buyConfirmations, 0, 8),
     sellConfirmations: clamp(sellConfirmations, 0, 8),
     buyStrength,
