@@ -120,6 +120,15 @@ function buildDecision(input = {}) {
   if (rsi < 28) warnings.push("⚠ RSI oversold hai - fresh SELL me risk high");
   if (Math.abs(histogram) < Math.max(price * 0.00005, 0.05)) warnings.push("⚠ MACD histogram chhota hai - momentum weak/flat ho sakta hai");
 
+  // ===== ATR + VWAP risk filters (only risk management, core indicators unchanged) =====
+  const minAtr = price * 0.0005;
+  const lowAtr = atr > 0 && atr < minAtr;
+  const vwapGap = Math.abs(price - vwap);
+  const vwapNear = atr > 0 ? vwapGap <= atr * 0.25 : vwapGap <= price * 0.001;
+
+  if (lowAtr) warnings.push("⚠ ATR bahut low hai - movement kam hai, NO TRADE better");
+  if (vwapNear) warnings.push("⚠ Price VWAP ke bahut paas hai - false move/breakout risk");
+
   // ===== Result / event risk support if frontend/backend provides it later =====
   const resultDaysLeftRaw = input.resultDaysLeft ?? input.daysToResult ?? input.resultInDays;
   const resultDaysLeft = Number(resultDaysLeftRaw);
@@ -166,6 +175,12 @@ function buildDecision(input = {}) {
     side = "wait";
   }
 
+  // ATR/VWAP safety rule: avoid trade when volatility is too low or price is stuck around VWAP.
+  if (lowAtr || vwapNear) {
+    decision = "WAIT / CONFIRMATION";
+    side = "wait";
+  }
+
   let confidence;
   if (side === "buy") confidence = buyStrength;
   else if (side === "sell") confidence = sellStrength;
@@ -186,14 +201,15 @@ function buildDecision(input = {}) {
   // If waiting, still show nearest practical level using dominant side, but no trade should be allowed.
   const tradeSide = side === "sell" ? "sell" : "buy";
   const isSell = tradeSide === "sell";
-  const slGap = Math.max(range * 0.45, price * 0.004);
+  const atrGap = atr > 0 ? atr : Math.max(range * 0.45, price * 0.004);
+  const slGap = atr > 0 ? Math.max(atrGap * 1.5, price * 0.004) : atrGap;
 
   const entryLow = tradeSide === "buy" ? price - price * 0.0015 : price;
   const entryHigh = tradeSide === "buy" ? price + price * 0.001 : price;
   const stopLoss = isSell ? price + slGap : price - slGap;
-  const target1 = isSell ? price - slGap * 1.5 : price + slGap * 1.5;
-  const target2 = isSell ? price - slGap * 2.2 : price + slGap * 2.2;
-  const target3 = isSell ? price - slGap * 3 : price + slGap * 3;
+  const target1 = isSell ? price - atrGap * 2 : price + atrGap * 2;
+  const target2 = isSell ? price - atrGap * 3 : price + atrGap * 3;
+  const target3 = isSell ? price - atrGap * 4 : price + atrGap * 4;
 
   const reasons = side === "sell" ? sellReasons : side === "buy" ? buyReasons : [];
   if (side === "wait") {
@@ -234,6 +250,7 @@ function buildDecision(input = {}) {
     signal: round(signal),
     histogram: round(histogram),
     atr: round(atr),
+    vwap: round(vwap),
     buyConfirmations: clamp(buyConfirmations, 0, 8),
     sellConfirmations: clamp(sellConfirmations, 0, 8),
     buyStrength,

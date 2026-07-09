@@ -518,6 +518,7 @@ async function getQuote(body = {}) {
       low: item.low,
       open: item.open,
       volume: item.tradeVolume,
+      vwap: item.avgPrice || item.averagePrice || item.vwap || item.averageTradedPrice || null,
       atr: liveAtr,
       rsi: liveRsi,
       ema9,
